@@ -16,8 +16,8 @@ import           Text.Read (readMaybe)
 import qualified Control.Exception as E ()
 
 import qualified Data.Forest as F
-import           Data.Sentence
-import           Data.Sentences
+import qualified Data.Sentence as S
+import qualified Data.Sentences as S
 import           Lens.Micro
 import           UI.AnnotationEditor
 import qualified UI.MiniBuffer as MB
@@ -77,7 +77,7 @@ loadEditors :: FilePath -> IO UIState
 loadEditors filePath = do
   let displayIOException :: E.IOException -> String
       displayIOException = E.displayException
-  mSentences <- E.try (Data.Sentences.readFile filePath)
+  mSentences <- E.try (S.readFile filePath)
   case mSentences of
     Left e -> do
       let mb = MB.message ("Error: " ++ displayIOException e) >> MB.abort
@@ -97,12 +97,12 @@ loadEditors filePath = do
               mb = MB.message ("Loaded " ++ filePath) >> MB.abort
           return $
             uiState
-            & editorsL    %~ zipperWith setForest (Z.fromList forests)
+            & editorsL    %~ S.zipperWith setForest (Z.fromList forests)
             & minibufferL .~ Just mb
 
-safeWordNr :: Int -> Sentence -> MB.MiniBuffer Name Data.Sentence.Word
+safeWordNr :: Int -> S.Sentence -> MB.MiniBuffer Name S.Word
 safeWordNr n sentence
-  | Just x <- wordNr n sentence  = return x
+  | Just x <- S.wordNr n sentence  = return x
   | otherwise = do
       MB.message "Invalid word number. Hit Enter to continue."
       MB.abort
@@ -110,7 +110,7 @@ safeWordNr n sentence
 saveForests :: FilePath -> [F.Forest] -> IO ()
 saveForests filePath = writeFile filePath . show . map F.serialise
 
-loadForests :: FilePath -> [Sentence] -> IO (Maybe [F.Forest])
+loadForests :: FilePath -> [S.Sentence] -> IO (Maybe [F.Forest])
 loadForests filePath sentences = do
   serialisations <- Prelude.readFile filePath
   return (readMaybe serialisations >>= zipWithM F.deserialise sentences)
@@ -134,11 +134,11 @@ sentencesWidget (UIState _ _ _ (Just (fb,_))) =
 sentencesWidget (UIState _ es mb Nothing) =
   hBorder
   <=>
-  sentenceWidget (initText (fmap editorSentence es))
+  sentenceWidget (S.initText (fmap editorSentence es))
   <=>
   padTopBottom 1 (maybe emptyWidget editorWidget $ Z.safeCursor es)
   <=>
-  sentenceWidget (tailText (fmap editorSentence es))
+  sentenceWidget (S.tailText (fmap editorSentence es))
   <=>
   hBorder
   <=>

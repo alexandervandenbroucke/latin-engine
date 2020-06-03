@@ -10,27 +10,31 @@ import qualified Data.List.Zipper as Z
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 
-import Data.Sentence
+import qualified Data.Sentence as S
 
 
-type Sentences = Z.Zipper Sentence
+type Sentences = Z.Zipper S.Sentence
 
 initText :: Sentences -> T.Text
 initText = toText . initp
 
 cursorText :: Sentences -> T.Text
-cursorText = maybe T.empty sentenceText . Z.safeCursor
+cursorText = maybe T.empty S.sentenceText . Z.safeCursor
 
 tailText :: Sentences -> T.Text
 tailText = toText . tailp
 
 fromText :: T.Text -> Sentences
-fromText = Z.fromList . map makeSentence . T.splitOn (T.pack ".")
+fromText =
+  Z.fromList
+  . filter (not . S.null)
+  . map S.makeSentence
+  . T.splitOn (T.pack ".")
 
 -- | Note that is may not be an exact inverse of 'fromText', a final period
--- can be added.
+-- can be added, empty lines may be removed.
 toText :: Sentences -> T.Text
-toText = T.concat . map ((<> T.pack ".") . sentenceText) . Z.toList
+toText = T.concat . map S.sentenceText . Z.toList
 -- note, with the current representation, this could be quite inefficient,
 -- since the text is already there in memory and sentences are guaranteed to
 -- be contiguous.

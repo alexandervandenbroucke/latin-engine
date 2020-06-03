@@ -8,6 +8,7 @@
 module Data.Sentence (
   Word(..),
   Sentence(..),
+  Data.Sentence.null,
   makeSentence,
   Data.Sentence.words, wordCount, sentenceText, wordNr
 )
@@ -26,6 +27,8 @@ newtype Sentence = Sentence {
   unSentence :: A.Array Int Word
 } deriving Show
 
+null :: Sentence -> Bool
+null s = wordCount s == 0
 
 makeSentence :: T.Text -> Sentence
 makeSentence text = Sentence (A.listArray (1,n) ws) where
