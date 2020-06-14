@@ -130,7 +130,7 @@ sentencesWidget (UIState _ _ _ (Just (fb,_))) =
   <=>
   case FB.fileBrowserException fb of
     Nothing -> str "Press ESC to cancel."
-    Just e -> str $ "Error (Press ESC to cancel):" ++ E.displayException e
+    Just e -> strWrap $ "Error (Press ESC to cancel):" ++ E.displayException e
 sentencesWidget (UIState _ es mb Nothing) =
   hBorder
   <=>
@@ -216,7 +216,8 @@ handleEvent uiState (VtyEvent (V.EvKey (V.KChar 's') []))
   | Nothing <- uiState^.minibufferL = do
       let filePath = (uiState^.filePathL) -<.> "fst"
       result <- liftIO $ E.try $ saveForests filePath $
-        map (^.forestL) (uiState^.editorsL.to Z.toList)
+        uiState^.editorsL.to Z.toList^..each.forestL
+        -- a list containing the forest of each editor in uiState^.editorsL
       let mb = case result of
             Left e -> do
               MB.message ("Error: " ++ E.displayException (e :: E.IOException))
