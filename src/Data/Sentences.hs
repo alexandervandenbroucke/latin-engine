@@ -1,3 +1,9 @@
+-- | A module for parsing a paragraph into individual sentences.
+--
+-- A sentence is recognised as a string of characters, not containing a period
+-- followed by a space, terminated by a full stop and a space (except the
+-- last sentence). The terminating full stop is not included in the sentence.
+
 module Data.Sentences (
   Sentences,  
   initText,cursorText,tailText,
@@ -28,13 +34,22 @@ fromText :: T.Text -> Sentences
 fromText =
   Z.fromList
   . filter (not . S.null)
-  . map S.makeSentence
-  . T.splitOn (T.pack ".")
+  . map (S.makeSentence . removeTrailingFullStop . removeTrailingNewline)
+  . T.splitOn (T.pack ". ")
+
+removeTrailingFullStop :: T.Text -> T.Text
+removeTrailingFullStop sentence =
+  maybe sentence id (T.stripSuffix (T.pack ".") sentence)
+
+removeTrailingNewline :: T.Text -> T.Text
+removeTrailingNewline sentence =
+  maybe sentence id (T.stripSuffix (T.pack "\n") sentence)
+
 
 -- | Note that is may not be an exact inverse of 'fromText', a final period
 -- can be added, empty lines may be removed.
 toText :: Sentences -> T.Text
-toText = T.concat . map S.sentenceText . Z.toList
+toText = T.intercalate (T.pack " ") . map S.sentenceText . Z.toList
 -- note, with the current representation, this could be quite inefficient,
 -- since the text is already there in memory and sentences are guaranteed to
 -- be contiguous.
