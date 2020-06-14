@@ -280,3 +280,6 @@ app = App {
     fileBrowserAttrs
 }
 
+-- Local Variables:
+-- dante-target: "latin-engine"
+-- End:
