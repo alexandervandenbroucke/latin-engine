@@ -67,7 +67,7 @@ abort = Abort
 
 miniBufferWidget :: MiniBuffer n a -> Widget n
 miniBufferWidget (Return _) = emptyWidget
-miniBufferWidget (Message msg _) = str msg
+miniBufferWidget (Message msg _) = strWrap msg
 miniBufferWidget (Prompt _ e msg _) =
   str msg <+> (txt $ mconcat $ E.getEditContents e)
 miniBufferWidget Abort = emptyWidget
