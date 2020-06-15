@@ -2,27 +2,33 @@
 {-# LANGUAGE TupleSections #-}
 
 module Data.Forest (
+  -- * Data Types
   Status(Root,Child,Clear),
   Forest(..),
-  emptyForest,
+  -- * Querying
   statusOf,
-  addRoot,
-  addChild,
-  clear,
   roots,
   children,
   descendents,
+  -- * Creating and Modifying
+  emptyForest,  
+  addRoot,
+  addChild,
+  clear,
+  -- * Serialisation
   serialise,
-  deserialise)
+  deserialise,
+  serialiseForests,
+  deserialiseForests,)
 where
 
-import           Control.Monad ((>=>))
+import           Control.Monad ((>=>), zipWithM)
 import qualified Data.IntMap as M
 import           Data.Sentence
 import qualified Data.Set as S
 import qualified Data.Text as T
-import           Prelude hiding (Word)
 import           Text.Read (readMaybe)
+import           Prelude hiding (Word)
 
 -------------------------------------------------------------------------------
 -- Forest data type
@@ -105,3 +111,10 @@ deserialise sentence =
         fmap ((root,) . S.fromList) (mapM wordNr' cs)
       deserialiseLine _ = Nothing
   in readMaybeText >=> mapM deserialiseLine >=> return . Forest . M.fromList
+
+serialiseForests :: [Forest] -> T.Text
+serialiseForests = T.pack . show . map serialise
+
+deserialiseForests :: [Sentence] -> T.Text -> Maybe [Forest]
+deserialiseForests sentences =
+  readMaybe . T.unpack >=> zipWithM deserialise sentences 

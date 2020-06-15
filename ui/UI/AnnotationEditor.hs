@@ -23,15 +23,6 @@ makeEditor forest sentence = Editor sentence forest
 makeEditorWidget :: S.Sentence -> Widget n
 makeEditorWidget sentence = editorWidget (makeEditor F.emptyForest sentence)
 
-splitLines :: Int -> (a -> Int) -> [a] -> [[a]]
-splitLines width len = go 0 [] where
-  go _ line [] = [reverse line]
-  go n line (x:xs)
-    | n + len x > width = reverse line : go 0 [] (x:xs)
-    | otherwise = go newLength newLine xs where
-        newLine = x:line
-        newLength = n + len x
-
 statusText :: S.Word -> F.Forest -> T.Text
 statusText word@(S.Word n _) forest = case F.statusOf word forest of
   F.Root    -> T.pack (show n ++ "R")
@@ -48,7 +39,7 @@ editorWidget (Editor sentence forest) = cropToContext $ Widget Greedy Greedy $ d
         [(text,statusText word forest)
         | word@(S.Word _ text) <- S.words sentence ]
       width = ctx^.availWidthL
-      splitted = splitLines width len pairs
+      splitted = S.splitLines width len pairs
       renderPair (text,status) = padRight (Pad 1) (txt text <=> txt status)
       renderLine :: [(T.Text,T.Text)] -> Widget n
       renderLine line = padRight Max $ hBox (map renderPair line)

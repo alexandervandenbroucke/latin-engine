@@ -1,19 +1,18 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 
-import           Control.Monad (zipWithM)
 import qualified Data.Forest as F
 import qualified Data.List.Zipper as Z
 import           Data.Monoid (Any)
 import qualified Data.Sentence as S
 import qualified Data.Sentences as S
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import qualified Diagrams.Backend.Rasterific as R
 import qualified Diagrams.Core as D
 import qualified Diagrams.Prelude as D
 import           System.Environment (getProgName,getArgs)
 import           System.FilePath (FilePath, (-<.>))
-import           Text.Read
 
 main :: IO ()
 main = do
@@ -24,20 +23,28 @@ main = do
     (filePath:_) -> do
       sentences <- S.readFile filePath
       Just forests <- readForests (filePath -<.> "fst") (Z.toList sentences)
-      let diagrams = zipWith  sentenceDiagram' forests (Z.toList sentences)
-          sentenceDiagram' forest sentence =
-            childMarkers colourMap forest sentence $
-            sentenceDiagram colourMap 1 1 forest sentence
-          colourMap = makeColourMap [D.green, D.red, D.blue,D.purple,D.orange]
-          diagram =  D.scale 15 (D.vsep 1 diagrams)
-          width   = D.width diagram
-          height  = D.height diagram
-      R.renderRasterific (filePath -<.> "pdf") (D.dims2D width height) diagram
+      let diagram = sentencesDiagram (Z.toList sentences) forests
+      writeRasterific (filePath -<.> "pdf") diagram
 
 readForests :: FilePath -> [S.Sentence] -> IO (Maybe [F.Forest])
-readForests filePath sentences = do
-  serialisations <- Prelude.readFile filePath
-  return (readMaybe serialisations >>= zipWithM F.deserialise sentences)
+readForests filePath sentences =
+  F.deserialiseForests sentences <$> T.readFile filePath
+
+writeRasterific :: FilePath -> D.QDiagram R.B D.V2 Float Any -> IO ()
+writeRasterific filePath diagram =
+  let width  = D.width diagram
+      height = D.height diagram
+  in R.renderRasterific (filePath -<.> "pdf") (D.dims2D width height) diagram
+  
+
+sentencesDiagram :: [S.Sentence] -> [F.Forest] -> D.QDiagram R.B D.V2 Float Any
+sentencesDiagram sentences forests =
+  let diagrams = zipWith  sentenceDiagram' forests sentences
+      sentenceDiagram' forest sentence =
+        childMarkers colourMap forest sentence $
+        sentenceDiagram colourMap 1 1 forest sentence
+      colourMap = makeColourMap [D.green, D.red, D.blue,D.purple,D.orange]
+  in D.scale 15 (D.vsep 1 diagrams)
 
 
 type ColourMap = Int -> D.Colour Double
@@ -45,18 +52,6 @@ type ColourMap = Int -> D.Colour Double
 makeColourMap :: [D.Colour Double] -> ColourMap
 makeColourMap [] _ = error "makeColourMap: emtpy list of colours."
 makeColourMap colours i = colours !! (i `mod` length colours)
-
-splitLines :: Int -> (a -> Int) -> [a] -> [[a]]
-splitLines width len = go 0 [] where
-  go _ line [] = [reverse line]
-  go n line (x:xs)
-    | n + len x > width = reverse line : go 0 [] (x:xs)
-    | otherwise = go newLength newLine xs where
-        newLine = x:line
-        newLength = n + len x
-
-splitSentence :: S.Sentence -> [[S.Word]]
-splitSentence = splitLines 80 (T.length . S.wordText) . S.words
 
 wordDiagram
   :: ColourMap -> F.Forest -> S.Word -> D.QDiagram R.B D.V2 Float Any
@@ -98,7 +93,7 @@ sentenceDiagram
 sentenceDiagram colourMap hSep vSep forest =
   D.vsep vSep .
   map (D.hsep hSep . map (wordDiagram colourMap forest)) .
-  splitSentence
+  S.splitSentence
 
 -- Local Variables:
 -- dante-target: "tree-render"

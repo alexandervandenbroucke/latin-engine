@@ -9,10 +9,10 @@ import           Control.Monad (zipWithM)
 import           Control.Monad.IO.Class
 import qualified Data.List.Zipper as Z
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import           Graphics.Vty (defAttr)
 import qualified Graphics.Vty as V
 import           System.FilePath ((-<.>))
-import           Text.Read (readMaybe)
 import qualified Control.Exception as E ()
 
 import qualified Data.Forest as F
@@ -108,12 +108,11 @@ safeWordNr n sentence
       MB.abort
 
 saveForests :: FilePath -> [F.Forest] -> IO ()
-saveForests filePath = writeFile filePath . show . map F.serialise
+saveForests filePath = T.writeFile filePath . F.serialiseForests
 
 loadForests :: FilePath -> [S.Sentence] -> IO (Maybe [F.Forest])
-loadForests filePath sentences = do
-  serialisations <- Prelude.readFile filePath
-  return (readMaybe serialisations >>= zipWithM F.deserialise sentences)
+loadForests filePath sentences =
+  T.readFile filePath >>= return . F.deserialiseForests sentences
 
 
 -------------------------------------------------------------------------------
@@ -279,7 +278,3 @@ app = App {
     ++
     fileBrowserAttrs
 }
-
--- Local Variables:
--- dante-target: "latin-engine"
--- End:

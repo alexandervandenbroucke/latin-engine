@@ -10,13 +10,14 @@ module Data.Sentence (
   Sentence(..),
   Data.Sentence.null,
   makeSentence,
-  Data.Sentence.words, wordCount, sentenceText, wordNr
+  words, wordCount, sentenceText, wordNr,
+  splitLines, splitSentence
 )
 where
 
 import qualified Data.Array as A
 import qualified Data.Text as T
-import           Prelude hiding (Word)
+import           Prelude hiding (Word,words)
 
 data Word = Word {
   wordId   :: Int,
@@ -50,3 +51,21 @@ words = A.elems . unSentence
 sentenceText :: Sentence -> T.Text
 sentenceText (Sentence ws) =
   T.unwords [txt | Word _ txt <- A.elems ws] <> T.pack "."
+
+-- | Split a list of things into lines.
+--
+-- Given a maximum width @w@, list @xs@ of @a@, and a function @len@, that
+-- gives the width of an @a@, split @xs@ into lines such that no line exceeds
+-- the maximum width.
+splitLines :: Int -> (a -> Int) -> [a] -> [[a]]
+splitLines width len = go 0 [] where
+  go _ line [] = [reverse line]
+  go n line (x:xs)
+    | n + len x > width = reverse line : go 0 [] (x:xs)
+    | otherwise = go newLength newLine xs where
+        newLine = x:line
+        newLength = n + len x
+
+-- | Split a sentence into lines of at most 80 columns.
+splitSentence :: Sentence -> [[Word]]
+splitSentence = splitLines 80 (T.length . wordText) . words
