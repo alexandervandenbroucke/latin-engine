@@ -3,7 +3,7 @@ cabal-version:       2.4
 -- init'.  For further documentation, see
 -- http://haskell.org/cabal/users-guide/
 
-name:                latin-engine
+name:                latin-engine-interactive
 version:             0.1.0.0
 -- synopsis:
 -- description:
@@ -16,22 +16,7 @@ maintainer:          alexander.vandenbroucke@kuleuven.be
 category:            Text
 extra-source-files:  CHANGELOG.md
 
-library
-  hs-source-dirs:      src/
-  exposed-modules:     Data.Sentence,
-                       Data.Sentences,
-                       Data.Forest
-  build-depends:       base ^>=4.11.1.0,
-                       text ^>=1.2.3.1,
-                       word-wrap ^>= 0.4.1,
-                       array,
-                       containers ^>= 0.6.2,
-                       ListZipper ^>= 1.2.0.2
-  default-language:    Haskell2010
-  ghc-options:         -Wall
-
-
-executable latin-engine
+executable interactive
   main-is:             Main.hs
   hs-source-dirs:      ui/, app/
   other-modules:       UI,
@@ -40,7 +25,7 @@ executable latin-engine
                        UI.MiniBuffer
   -- other-extensions:
   build-depends:       base ^>=4.11.1.0,
-                       latin-engine,
+                       latin-engine-core,
                        text ^>=1.2.3.1,
                        vty ^>= 5.28.2,
                        brick ^>= 0.52.1,
@@ -52,19 +37,19 @@ executable latin-engine
   default-language:    Haskell2010
   ghc-options:         -threaded -Wall
 
-executable tree-render
-  main-is:             TreeRender.hs
-  hs-source-dirs:      app/
-  -- other-extensions:
-  build-depends:       base ^>=4.11.1.0,
-                       latin-engine,
-                       text ^>=1.2.3.1,
-                       ListZipper ^>= 1.2.0.2,
-                       diagrams-core ^>= 1.4,
-                       diagrams-lib ^>= 1.4,
-                       diagrams-rasterific ^>= 1.4,
-                       filepath ^>= 1.4.2,
-                       array
-  -- hs-source-dirs:
-  default-language:    Haskell2010
-  ghc-options:         -threaded -Wall
+-- executable tree-render
+--   main-is:             TreeRender.hs
+--   hs-source-dirs:      app/
+--   -- other-extensions:
+--   build-depends:       base ^>=4.11.1.0,
+--                        latin-engine-core,
+--                        text ^>=1.2.3.1,
+--                        ListZipper ^>= 1.2.0.2,
+--                        diagrams-core ^>= 1.4,
+--                        diagrams-lib ^>= 1.4,
+--                        diagrams-rasterific ^>= 1.4,
+--                        filepath ^>= 1.4.2,
+--                        array
+--   -- hs-source-dirs:
+--   default-language:    Haskell2010
+--   ghc-options:         -threaded -Wall

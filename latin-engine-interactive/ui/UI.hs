@@ -5,7 +5,6 @@ import           Brick.Widgets.Border
 import           Brick.Widgets.FileBrowser as FB
 import           Brick.Widgets.List as L
 import qualified Control.Exception as E
-import           Control.Monad (zipWithM)
 import           Control.Monad.IO.Class
 import qualified Data.List.Zipper as Z
 import qualified Data.Text as T
