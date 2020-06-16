@@ -85,7 +85,7 @@ loadEditors filePath = do
       let editors = fmap (makeEditor F.emptyForest) sentences
           uiState = initState filePath & editorsL .~ editors
           filePathForest = filePath -<.> "fst"
-      eForests <- E.try (loadForests filePathForest (Z.toList sentences))
+      eForests <- E.try (loadForests filePathForest)
                   <&> _Left %~ ("Error: " ++) . displayIOException
       case eForests >>= maybe (Left "Warning: invalid forest file.") Right of
         Left e -> do
@@ -109,9 +109,9 @@ safeWordNr n sentence
 saveForests :: FilePath -> [F.Forest] -> IO ()
 saveForests filePath = T.writeFile filePath . F.serialiseForests
 
-loadForests :: FilePath -> [S.Sentence] -> IO (Maybe [F.Forest])
-loadForests filePath sentences =
-  T.readFile filePath >>= return . F.deserialiseForests sentences
+loadForests :: FilePath -> IO (Maybe [F.Forest])
+loadForests filePath =
+  T.readFile filePath >>= return . F.deserialiseForests
 
 
 -------------------------------------------------------------------------------
@@ -181,22 +181,24 @@ handleEvent uiState (VtyEvent (V.EvKey (V.KChar 'r') []))
     Just e <- uiState^.editorsL.to Z.safeCursor =
       let mb = do
             n <- MB.promptNatural MB "root (C-g to cancel): "
-            w <- safeWordNr n (editorSentence e)
-            return $ (minibufferL .~ Nothing)
-              . (currentEditorL._Just.forestL %~ F.addRoot w)
+            _ <- safeWordNr n (editorSentence e)
+            return $ \s ->
+              s & minibufferL .~ Nothing
+                & currentEditorL._Just.forestL %~ F.setRoot n
       in continue (uiState & minibufferL .~ Just mb)
 
 handleEvent uiState (VtyEvent (V.EvKey (V.KChar 'c') []))
   | Nothing <- uiState^.minibufferL,
     Just e <- uiState^.editorsL.to Z.safeCursor =
       let mb = do
-            cn <- MB.promptNatural MB "child (C-g to cancel): "
-            c <- safeWordNr cn (editorSentence e)      
-            rn <- MB.promptNatural MB $
-              "child  " ++ show cn ++ " of (C-g to cancel): "
-            r <- safeWordNr rn (editorSentence e)
-            return $ (minibufferL .~ Nothing)
-              . (currentEditorL._Just.forestL %~ F.addChild c r)
+            c <- MB.promptNatural MB "child (C-g to cancel): "
+            _ <- safeWordNr c (editorSentence e)      
+            p <- MB.promptNatural MB $
+              "child  " ++ show c ++ " of (C-g to cancel): "
+            _ <- safeWordNr p (editorSentence e)
+            return $ \s ->
+              s & minibufferL .~ Nothing
+                & currentEditorL._Just.forestL %~ F.addChild c p
 
       in continue (uiState & minibufferL .~ Just mb)
 
@@ -205,9 +207,10 @@ handleEvent uiState (VtyEvent (V.EvKey (V.KChar 'e') []))
     Just e <- uiState^.editorsL.to Z.safeCursor =
       let mb = do
             n <- MB.promptNatural MB "node (C-g to cancel): "
-            c <- safeWordNr n (editorSentence e)
-            return $ (minibufferL .~ Nothing)
-              . (currentEditorL._Just.forestL %~ F.clear c)
+            _ <- safeWordNr n (editorSentence e)
+            return $ \s ->
+              s & minibufferL .~ Nothing
+                & currentEditorL._Just.forestL %~ F.clear n
       in continue (uiState & minibufferL .~ Just mb)
 --        
 handleEvent uiState (VtyEvent (V.EvKey (V.KChar 's') []))

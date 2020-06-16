@@ -6,6 +6,7 @@
 -- subjects, clause markings). Stanzas should have annotations related to the
 -- structure of the meter (e.g. stresses, caesura, ...).
 module Data.Sentence (
+  WordId,
   Word(..),
   Sentence(..),
   Data.Sentence.null,
@@ -18,6 +19,8 @@ where
 import qualified Data.Array as A
 import qualified Data.Text as T
 import           Prelude hiding (Word,words)
+
+type WordId = Int
 
 data Word = Word {
   wordId   :: Int,

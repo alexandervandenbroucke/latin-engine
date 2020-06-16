@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Diagrams.LatinEngine (
   -- * Colour Maps
@@ -15,6 +16,7 @@ import qualified Data.Sentence as S
 import qualified Data.Text as T
 import qualified Diagrams.Backend.Rasterific as R
 import qualified Diagrams.Prelude as D
+import           Lens.Micro ((^.))
 
 -------------------------------------------------------------------------------
 -- ColourMap
@@ -26,7 +28,8 @@ makeColourMap [] _ = error "makeColourMap: emtpy list of colours."
 makeColourMap colours i = colours !! (i `mod` length colours)
 
 defaultColourMap :: ColourMap
-defaultColourMap = makeColourMap [D.green, D.red, D.blue,D.purple,D.orange]
+defaultColourMap =
+  makeColourMap [D.green, D.red, D.blue,D.purple,D.orange]
 
 -------------------------------------------------------------------------------
 -- Making Diagrams of Sentences
@@ -46,7 +49,7 @@ wordDiagram colourMap forest word =
   let  txt = R.texterific (T.unpack (S.wordText word))
        colour = colourMap (S.wordId word)
        marker
-         | F.Root <- F.statusOf word forest =
+         | F.Root <- forest `F.statusOf` S.wordId word =
              D.bgFrame 0.1 colour (D.bgFrame 0.1 D.white txt)
          | otherwise =
              txt
@@ -59,16 +62,24 @@ childMarkers
   -> D.QDiagram R.B D.V2 Float Any
   -> D.QDiagram R.B D.V2 Float Any
 childMarkers colourMap forest sentence d =
-  let statuses = [(word,F.statusOf word forest) | word <- S.words sentence]
-      children = [(S.wordId w,p) | (w,F.Child p) <- statuses]
-      colourMap' = D.lc . colourMap
+  let statusOf word = (n,forest `F.statusOf` n) where n = S.wordId word
+      children = [(w,p) | (w,F.Child p) <- map statusOf (S.words sentence)]
       attach (c,p) = D.withNames [c,p] $ \[cDiagram, pDiagram] ->
-        D.atop ((D.location cDiagram .^. D.location pDiagram) D.# colourMap' p)
-      p1 .^. p2 =
-        let c1 = D.r2 (0,-1)
-            c2 = D.r2 (0,-1) D.^+^ v
-            v  = p2 D..-. p1
-        in D.fromSegments [D.bezier3 c1 c2 v] `D.place` p1
+        -- the evenness of the root determines if an arc is drawn on top
+        -- or below.
+        let location d
+              | even p    = D.boundaryFrom d D.unit_Y
+              | otherwise = D.boundaryFrom d D.unitY
+            p1 .^. p2 =
+              let h = if even p then -1 else 1 * (1 - 0.7*(10 - r)/10)
+                  -- the idea is to make longer arcs higher, needs some work
+                  c1 = D.r2 (0,h)
+                  c2 = D.r2 (0,h) D.^+^ v
+                  v  = p2 D..-. p1
+                  r  = min (v^.D._r) 10
+              in (D.fromSegments [D.bezier3 c1 c2 v]) `D.place` p1
+            arc = location cDiagram .^. location pDiagram
+        in (`D.atop` arc D.# D.lc (colourMap p))
   in foldr attach d children
 
 sentenceDiagram

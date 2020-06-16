@@ -24,7 +24,7 @@ makeEditorWidget :: S.Sentence -> Widget n
 makeEditorWidget sentence = editorWidget (makeEditor F.emptyForest sentence)
 
 statusText :: S.Word -> F.Forest -> T.Text
-statusText word@(S.Word n _) forest = case F.statusOf word forest of
+statusText word forest | n <- S.wordId word = case forest `F.statusOf` n of
   F.Root    -> T.pack (show n ++ "R")
   F.Child r -> T.pack (show n ++ "C" ++ show r)
   F.Clear   -> T.pack (show n)
