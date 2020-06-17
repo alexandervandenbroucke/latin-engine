@@ -6,6 +6,7 @@ module Diagrams.LatinEngine (
   -- * Colour Maps
   ColourMap, makeColourMap, defaultColourMap,
   -- * Making Diagrams of Sentences
+  Config(..), colourMapL, paragraphSkipL, lineSkipL, wordSkipL, scaleL,
   sentencesDiagram  
 )
 where 
@@ -16,7 +17,7 @@ import qualified Data.Sentence as S
 import qualified Data.Text as T
 import qualified Diagrams.Backend.Rasterific as R
 import qualified Diagrams.Prelude as D
-import           Lens.Micro ((^.))
+import           Lens.Micro (Lens',lens,(^.))
 
 -------------------------------------------------------------------------------
 -- ColourMap
@@ -34,14 +35,45 @@ defaultColourMap =
 -------------------------------------------------------------------------------
 -- Making Diagrams of Sentences
 
+data Config = Config {
+  _confColourMap     :: ColourMap, -- ^ colour map for annotations
+  _confParagraphSkip :: Float,     -- ^ space between paragaphs
+  _confLineSkip      :: Float,     -- ^ space between sentences
+  _confWordSkip      :: Float,     -- ^ space between words
+  _confScale         :: Float      -- ^ scaling factor of the final diagram
+}
+
+instance D.Default Config where
+  def = Config defaultColourMap 2 2 1 15
+
+colourMapL :: Lens' Config ColourMap
+colourMapL = lens _confColourMap (\conf m -> conf{_confColourMap = m})
+
+paragraphSkipL :: Lens' Config Float
+paragraphSkipL =
+  lens _confParagraphSkip (\conf skip -> conf{_confParagraphSkip = skip})
+
+lineSkipL :: Lens' Config Float
+lineSkipL =
+  lens _confLineSkip (\conf skip -> conf{_confLineSkip = skip})
+
+wordSkipL :: Lens' Config Float
+wordSkipL =
+  lens _confWordSkip (\conf skip -> conf{_confWordSkip = skip})
+
+scaleL :: Lens' Config Float
+scaleL =
+  lens _confScale (\conf scale -> conf{_confScale = scale})
+
+
 sentencesDiagram
-  :: ColourMap -> [S.Sentence] -> [F.Forest] -> D.QDiagram R.B D.V2 Float Any
-sentencesDiagram colourMap sentences forests =
+  :: Config -> [S.Sentence] -> [F.Forest] -> D.QDiagram R.B D.V2 Float Any
+sentencesDiagram conf sentences forests =
   let diagrams = zipWith  sentenceDiagram' forests sentences
       sentenceDiagram' forest sentence =
-        childMarkers colourMap forest sentence $
-        sentenceDiagram colourMap 1 1 forest sentence
-  in D.scale 15 (D.vsep 1 diagrams)
+        childMarkers (conf^.colourMapL) forest sentence $
+        sentenceDiagram conf forest sentence
+  in D.scale (conf^.scaleL) (D.vsep (conf^.paragraphSkipL) diagrams)
 
 wordDiagram
   :: ColourMap -> F.Forest -> S.Word -> D.QDiagram R.B D.V2 Float Any
@@ -83,13 +115,10 @@ childMarkers colourMap forest sentence d =
   in foldr attach d children
 
 sentenceDiagram
-  :: ColourMap
-  -> Float
-  -> Float
-  -> F.Forest
-  -> S.Sentence
-  -> D.QDiagram R.B D.V2 Float Any
-sentenceDiagram colourMap hSep vSep forest =
-  D.vsep vSep .
-  map (D.hsep hSep . map (wordDiagram colourMap forest)) .
+  :: Config -> F.Forest -> S.Sentence -> D.QDiagram R.B D.V2 Float Any
+sentenceDiagram conf forest =
+  D.vsep (conf^.lineSkipL) . 
+  map (D.hsep (conf^.wordSkipL) . map (wordDiagram (conf^.colourMapL) forest)) .
   S.splitSentence
+  
+
