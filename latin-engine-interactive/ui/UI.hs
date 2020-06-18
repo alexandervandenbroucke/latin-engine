@@ -2,8 +2,6 @@ module UI (app,initState,loadEditors) where
 
 import           Brick
 import           Brick.Widgets.Border
-import           Brick.Widgets.FileBrowser as FB
-import           Brick.Widgets.List as L
 import qualified Control.Exception as E
 import           Control.Monad.IO.Class
 import qualified Data.List.Zipper as Z
@@ -23,17 +21,13 @@ import qualified UI.MiniBuffer as MB
 
 data Name = MB | FB deriving (Eq,Ord,Show)
 
-type FileBrowserWithCallBack =
-  (FB.FileBrowser Name, [FileInfo] -> UIState -> IO UIState)
-
 -------------------------------------------------------------------------------
 -- UIState and Lenses
 
 data UIState = UIState {
   uiFilePath    :: FilePath,
   uiEditors     :: Z.Zipper Editor,
-  uiMinibuffer  :: Maybe (MB.MiniBuffer Name (UIState -> UIState)),
-  uiFileBrowser :: Maybe FileBrowserWithCallBack
+  uiMinibuffer  :: Maybe (MB.MiniBuffer Name (UIState -> UIState))
 }
 
 filePathL :: Lens' UIState FilePath
@@ -45,18 +39,6 @@ editorsL = lens uiEditors (\e z -> e{uiEditors = z})
 minibufferL
   :: Lens' UIState (Maybe (MB.MiniBuffer Name (UIState -> UIState)))
 minibufferL = lens uiMinibuffer (\e mb -> e{uiMinibuffer = mb})
-
-fileBrowserWithCallBackL
-  :: Lens' UIState (Maybe FileBrowserWithCallBack)
-fileBrowserWithCallBackL =
-  lens uiFileBrowser (\e fbcb -> e{uiFileBrowser = fbcb})
-
-fileBrowserL :: Traversal' UIState (FileBrowser Name)
-fileBrowserL = fileBrowserWithCallBackL._Just._1
-
-fileBrowserCallBackL
-  :: Traversal' UIState ([FileInfo] -> UIState -> IO UIState)
-fileBrowserCallBackL = fileBrowserWithCallBackL._Just._2
 
 cursorL :: Lens' (Z.Zipper a) (Maybe a)
 cursorL = lens Z.safeCursor modify where
@@ -70,7 +52,7 @@ currentEditorL = editorsL.cursorL
 -- State loading
 
 initState :: FilePath -> UIState
-initState filePath = UIState filePath Z.empty Nothing Nothing
+initState filePath = UIState filePath Z.empty Nothing
 
 loadEditors :: FilePath -> IO UIState
 loadEditors filePath = do
@@ -123,13 +105,7 @@ sentenceWidget text = txtWrap (T.map explicitNewline text) where
   explicitNewline c = c
 
 sentencesWidget :: UIState -> Widget Name
-sentencesWidget (UIState _ _ _ (Just (fb,_))) =
-  FB.renderFileBrowser True fb
-  <=>
-  case FB.fileBrowserException fb of
-    Nothing -> str "Press ESC to cancel."
-    Just e -> strWrap $ "Error (Press ESC to cancel):" ++ E.displayException e
-sentencesWidget (UIState _ es mb Nothing) =
+sentencesWidget (UIState _ es mb) =
   hBorder
   <=>
   sentenceWidget (S.initText (fmap editorSentence es))
@@ -140,7 +116,7 @@ sentencesWidget (UIState _ es mb Nothing) =
   <=>
   hBorder
   <=>
-  maybe (str "R)oot C)hild E)rase S)ave L)oad Q)uit") MB.miniBufferWidget mb
+  maybe (str "R)oot C)hild E)rase S)ave Q)uit") MB.miniBufferWidget mb
 
 -------------------------------------------------------------------------------
 -- Event handling
@@ -149,23 +125,7 @@ handleEvent :: UIState -> BrickEvent Name () -> EventM Name (Next UIState)
 handleEvent uiState (AppEvent ()) =
   continue uiState
 
-handleEvent uiState (VtyEvent (V.EvKey V.KEsc []))
-  | Nothing <- uiState^?fileBrowserL =
-      halt uiState
-  | Just fb <- uiState^?fileBrowserL, not (FB.fileBrowserIsSearching fb) =
-      continue $ uiState
-        & fileBrowserWithCallBackL .~ Nothing
-        & minibufferL .~ Just (MB.message "File browser cancelled." >> MB.abort)
-handleEvent uiState (VtyEvent vtyEvent)
-  | Just (fb,callback) <- uiState^.fileBrowserWithCallBackL = do
-      newFB <- FB.handleFileBrowserEvent vtyEvent fb
-      let selection = fileBrowserSelection newFB
-          newUIState = uiState & fileBrowserL .~ newFB
-      case vtyEvent of
-        V.EvKey V.KEnter [] | not (null selection) ->
-          liftIO (callback selection newUIState) >>= continue
-        _ -> do
-          continue newUIState
+handleEvent uiState (VtyEvent (V.EvKey V.KEsc [])) = halt uiState
 
 handleEvent uiState (VtyEvent (V.EvKey V.KUp [])) =
   continue (uiState & editorsL %~ Z.left)
@@ -228,22 +188,6 @@ handleEvent uiState (VtyEvent (V.EvKey (V.KChar 's') []))
               MB.abort
       continue (uiState & minibufferL .~ Just mb)
   
-handleEvent uiState (VtyEvent (V.EvKey (V.KChar 'l') []))
-  | Nothing <- uiState^.minibufferL = do
-      fb <- liftIO (FB.newFileBrowser selectNonDirectories FB Nothing)
-      let callback :: [FileInfo] -> UIState -> IO UIState
-          callback fileInfos callBackUIState
-            | [] <- fileInfos =
-                let mb = MB.message "No files were selected." >> MB.abort
-                in return $ callBackUIState
-                   & minibufferL .~ Just mb
-                   & fileBrowserWithCallBackL .~ Nothing
-                   
-            | (fileInfo:_) <- fileInfos = do
-                let filePath = FB.fileInfoFilePath fileInfo
-                loadEditors filePath
-      continue (uiState & fileBrowserWithCallBackL .~ Just (fb,callback))
-
 handleEvent uiState evt | Just mb <- uiState^.minibufferL = do
   newMB <- MB.handleMiniBufferEvent mb evt
   case newMB of
@@ -254,20 +198,6 @@ handleEvent uiState evt | Just mb <- uiState^.minibufferL = do
 handleEvent uiState _evt = continue uiState
 
 
-fileBrowserAttrs :: [(AttrName,V.Attr)]
-fileBrowserAttrs = 
-    [ (L.listSelectedFocusedAttr, V.black `on` V.white)
-    , (FB.fileBrowserCurrentDirectoryAttr, fg V.green)
-    , (FB.fileBrowserSelectionInfoAttr, V.black `on` V.white)
-    , (FB.fileBrowserDirectoryAttr, fg V.green)
-    , (FB.fileBrowserBlockDeviceAttr, fg V.red)
-    , (FB.fileBrowserCharacterDeviceAttr, fg V.red)
-    , (FB.fileBrowserNamedPipeAttr, fg V.red)
-    , (FB.fileBrowserSymbolicLinkAttr, fg V.cyan)
-    , (FB.fileBrowserUnixSocketAttr, fg V.red)
-    , (FB.fileBrowserSelectedAttr, fg V.white)
-    , (attrName "error", fg V.red)
-    ]
 
 app :: App UIState () Name
 app = App {
@@ -277,6 +207,4 @@ app = App {
   appStartEvent = return,
   appAttrMap = const $ attrMap Graphics.Vty.defAttr $
     [(focusAttr,V.white `on` V.black)]
-    ++
-    fileBrowserAttrs
 }
