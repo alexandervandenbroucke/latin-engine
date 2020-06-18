@@ -259,7 +259,7 @@ fileBrowserAttrs =
     [ (L.listSelectedFocusedAttr, V.black `on` V.white)
     , (FB.fileBrowserCurrentDirectoryAttr, fg V.green)
     , (FB.fileBrowserSelectionInfoAttr, V.black `on` V.white)
-    , (FB.fileBrowserDirectoryAttr, fg V.white)
+    , (FB.fileBrowserDirectoryAttr, fg V.green)
     , (FB.fileBrowserBlockDeviceAttr, fg V.red)
     , (FB.fileBrowserCharacterDeviceAttr, fg V.red)
     , (FB.fileBrowserNamedPipeAttr, fg V.red)
