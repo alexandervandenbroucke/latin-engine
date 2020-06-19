@@ -54,7 +54,8 @@ statusText word forest | n <- S.wordId word = case forest `F.statusOf` n of
 
 -- | Render an 'Editor'.
 editorWidget :: Editor -> Widget n
-editorWidget (Editor sentence forest) = cropToContext $ Widget Greedy Greedy $ do
+editorWidget (Editor sentence forest) =
+  cropToContext $ padRight Max $ Widget Greedy Fixed $ do
   ctx <- getContext
 
   let len (text,status) =  max (textWidth text) (textWidth status) + 1
