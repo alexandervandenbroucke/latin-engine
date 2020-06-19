@@ -1,3 +1,14 @@
+{- |
+
+Module:      Diagrams.LatinEngine
+Description: A module for rendering forests of parse trees of sentences
+Maintainer:  alexander.vandenbroucke@gmail.com
+
+This module implements routines for rendering a 'S.Sentence' and its
+accompanying 'F.Forest' to a 'D.Diagram'.
+
+-}
+
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -5,11 +16,12 @@
 module Diagrams.LatinEngine (
   -- * Colour Maps
   ColourMap, makeColourMap, defaultColourMap,
-  -- * Making Diagrams of Sentences
+  -- * Config
   Config(..), colourMapL, paragraphSkipL, lineSkipL, wordSkipL, scaleL,
-  sentencesDiagram  
+  -- * Making Diagrams of Sentences
+  sentencesDiagram
 )
-where 
+where
 
 import qualified Data.Forest as F
 import           Data.Monoid (Any)
@@ -22,12 +34,16 @@ import           Lens.Micro (Lens',lens,(^.))
 -------------------------------------------------------------------------------
 -- ColourMap
 
+-- | A function from ints to colours.
 type ColourMap = Int -> D.Colour Double
 
+-- | Make a colour map from a finite list of colours.
+-- The colours are wrapped around when reaching the end of the list.
 makeColourMap :: [D.Colour Double] -> ColourMap
 makeColourMap [] _ = error "makeColourMap: emtpy list of colours."
 makeColourMap colours i = colours !! (i `mod` length colours)
 
+-- | A default colour map containing green, red, blue, purple and orange.
 defaultColourMap :: ColourMap
 defaultColourMap =
   makeColourMap [D.green, D.red, D.blue,D.purple,D.orange]
@@ -35,37 +51,45 @@ defaultColourMap =
 -------------------------------------------------------------------------------
 -- Making Diagrams of Sentences
 
+-- | Parameters for rendering a sentence and parse tree.
 data Config = Config {
-  _confColourMap     :: ColourMap, -- ^ colour map for annotations
+  _confColourMap     :: ColourMap, -- ^ colour map for roots and arcs
   _confParagraphSkip :: Float,     -- ^ space between paragaphs
   _confLineSkip      :: Float,     -- ^ space between sentences
   _confWordSkip      :: Float,     -- ^ space between words
   _confScale         :: Float      -- ^ scaling factor of the final diagram
 }
 
+-- | The default config has the 'defaultColourMap', skips 2, 2 and 1, and
+-- a scale factor of 15.
 instance D.Default Config where
   def = Config defaultColourMap 2 2 1 15
 
+-- | Lens to the 'Config's 'ColourMap'
 colourMapL :: Lens' Config ColourMap
 colourMapL = lens _confColourMap (\conf m -> conf{_confColourMap = m})
 
+-- | Lens to the 'Config's paragraph skip.
 paragraphSkipL :: Lens' Config Float
 paragraphSkipL =
   lens _confParagraphSkip (\conf skip -> conf{_confParagraphSkip = skip})
 
+-- | Lens to the 'Config's line skip.
 lineSkipL :: Lens' Config Float
 lineSkipL =
   lens _confLineSkip (\conf skip -> conf{_confLineSkip = skip})
 
+-- | Lens to the 'Config's word skip.
 wordSkipL :: Lens' Config Float
 wordSkipL =
   lens _confWordSkip (\conf skip -> conf{_confWordSkip = skip})
 
+-- | Lens to the 'Config's scale factor.
 scaleL :: Lens' Config Float
 scaleL =
   lens _confScale (\conf scale -> conf{_confScale = scale})
 
-
+-- | Render a set of sentences and corresponding forests.
 sentencesDiagram
   :: Config -> [S.Sentence] -> [F.Forest] -> D.QDiagram R.B D.V2 Float Any
 sentencesDiagram conf sentences forests =
@@ -75,6 +99,9 @@ sentencesDiagram conf sentences forests =
         sentenceDiagram conf forest sentence
   in D.scale (conf^.scaleL) (D.vsep (conf^.paragraphSkipL) diagrams)
 
+-- | Render a single word.
+--
+-- The diagram of the word is named with its word id.
 wordDiagram
   :: ColourMap -> F.Forest -> S.Word -> D.QDiagram R.B D.V2 Float Any
 wordDiagram colourMap forest word =
@@ -87,6 +114,10 @@ wordDiagram colourMap forest word =
              txt
   in marker D.# D.centerX D.# D.named (S.wordId word) D.# D.alignL
 
+-- | Overlay (underlay really) markers the arcs on the diagram of a sentence.
+--
+-- This function assumes that the diagram of each word has been named with its
+-- id.
 childMarkers
   :: ColourMap
   -> F.Forest
@@ -114,11 +145,10 @@ childMarkers colourMap forest sentence d =
         in (`D.atop` arc D.# D.lc (colourMap p))
   in foldr attach d children
 
+-- | A diagram showing the text and root markers of a sentence.
 sentenceDiagram
   :: Config -> F.Forest -> S.Sentence -> D.QDiagram R.B D.V2 Float Any
 sentenceDiagram conf forest =
-  D.vsep (conf^.lineSkipL) . 
+  D.vsep (conf^.lineSkipL) .
   map (D.hsep (conf^.wordSkipL) . map (wordDiagram (conf^.colourMapL) forest)) .
   S.splitSentence
-  
-

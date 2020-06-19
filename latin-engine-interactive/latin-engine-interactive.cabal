@@ -21,7 +21,6 @@ executable interactive
   hs-source-dirs:      ui/, app/
   other-modules:       UI,
                        UI.AnnotationEditor,
-                       UI.Sentence,
                        UI.MiniBuffer
   -- other-extensions:
   build-depends:       base ^>=4.11.1.0,

@@ -1,4 +1,4 @@
-{- | 
+{- |
 
 Module:      Data.Sentence
 Description: A data type for sequences of words
@@ -58,7 +58,7 @@ makeSentence text = Sentence (A.listArray (1,n) ws) where
 removeTrailingFullStop :: T.Text -> T.Text
 removeTrailingFullStop sentence =
   maybe sentence id (T.stripSuffix (T.pack ".") sentence)
-    
+
 
 -- | The number of words in this sentence.
 wordCount :: Sentence -> Int
@@ -76,7 +76,7 @@ wordNr i (Sentence arr)
 words :: Sentence -> [Word]
 words = A.elems . unSentence
 
--- \ Turn a sentence into a 'T.Text' by concatenating all words with spaces in
+-- | Turn a sentence into a 'T.Text' by concatenating all words with spaces in
 -- between.
 --
 -- The following property should hold for all sentences @s@

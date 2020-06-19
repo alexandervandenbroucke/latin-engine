@@ -64,7 +64,7 @@ loadEditors filePath = do
       let mb = MB.message ("Error: " ++ displayIOException e) >> MB.abort
       return (initState filePath & minibufferL .~ Just mb)
     Right sentences -> do
-      let editors = fmap (makeEditor F.emptyForest) sentences
+      let editors = fmap makeEmptyEditor sentences
           uiState = initState filePath & editorsL .~ editors
           filePathForest = filePath -<.> "fst"
       eForests <- E.try (loadForests filePathForest)
@@ -134,60 +134,57 @@ handleEvent uiState (VtyEvent (V.EvKey V.KDown []))
   | Z.endp (uiState^.editorsL) = continue uiState
   | otherwise = continue (uiState & editorsL %~ Z.right)
 
-handleEvent uiState (VtyEvent (V.EvKey (V.KChar 'q') [])) = halt uiState
-
-handleEvent uiState (VtyEvent (V.EvKey (V.KChar 'r') []))
-  | Nothing <- uiState^.minibufferL,
-    Just e <- uiState^.editorsL.to Z.safeCursor =
-      let mb = do
-            n <- MB.promptNatural MB "root (C-g to cancel): "
-            _ <- safeWordNr n (editorSentence e)
+handleEvent uiState (VtyEvent (V.EvKey (V.KChar c) []))
+  | 'q' <- c
+  = halt uiState
+  | 'r' <- c,
+    Nothing <- uiState^.minibufferL,
+    Just e <- uiState^.editorsL.to Z.safeCursor
+  = let mb = do
+            root <- MB.promptNatural MB "root (C-g to cancel): "
+            _ <- safeWordNr root (editorSentence e)
             return $ \s ->
               s & minibufferL .~ Nothing
-                & currentEditorL._Just.forestL %~ F.setRoot n
-      in continue (uiState & minibufferL .~ Just mb)
-
-handleEvent uiState (VtyEvent (V.EvKey (V.KChar 'c') []))
-  | Nothing <- uiState^.minibufferL,
-    Just e <- uiState^.editorsL.to Z.safeCursor =
-      let mb = do
-            c <- MB.promptNatural MB "child (C-g to cancel): "
-            _ <- safeWordNr c (editorSentence e)      
-            p <- MB.promptNatural MB $
-              "child  " ++ show c ++ " of (C-g to cancel): "
-            _ <- safeWordNr p (editorSentence e)
-            return $ \s ->
-              s & minibufferL .~ Nothing
-                & currentEditorL._Just.forestL %~ F.addChild c p
-
-      in continue (uiState & minibufferL .~ Just mb)
-
-handleEvent uiState (VtyEvent (V.EvKey (V.KChar 'e') []))
-  | Nothing <- uiState^.minibufferL,
-    Just e <- uiState^.editorsL.to Z.safeCursor =
-      let mb = do
-            n <- MB.promptNatural MB "node (C-g to cancel): "
-            _ <- safeWordNr n (editorSentence e)
-            return $ \s ->
-              s & minibufferL .~ Nothing
-                & currentEditorL._Just.forestL %~ F.clear n
-      in continue (uiState & minibufferL .~ Just mb)
---        
-handleEvent uiState (VtyEvent (V.EvKey (V.KChar 's') []))
-  | Nothing <- uiState^.minibufferL = do
-      let filePath = (uiState^.filePathL) -<.> "fst"
+                & currentEditorL._Just.forestL %~ F.setRoot root
+    in continue (uiState & minibufferL .~ Just mb)
+  | 'c' <- c,
+    Nothing <- uiState^.minibufferL,
+    Just e <- uiState^.editorsL.to Z.safeCursor
+  = let mb = do
+          child <- MB.promptNatural MB "child (C-g to cancel): "
+          _ <- safeWordNr child (editorSentence e)
+          parent <- MB.promptNatural MB $
+            "child  " ++ show c ++ " of (C-g to cancel): "
+          _ <- safeWordNr parent (editorSentence e)
+          return $ \s ->
+            s & minibufferL .~ Nothing
+              & currentEditorL._Just.forestL %~ F.addChild child parent
+    in continue (uiState & minibufferL .~ Just mb)
+  | 'e' <- c,
+    Nothing <- uiState^.minibufferL,
+    Just e <- uiState^.editorsL.to Z.safeCursor
+  = let mb = do
+          n <- MB.promptNatural MB "node (C-g to cancel): "
+          _ <- safeWordNr n (editorSentence e)
+          return $ \s ->
+            s & minibufferL .~ Nothing
+              & currentEditorL._Just.forestL %~ F.clear n
+    in continue (uiState & minibufferL .~ Just mb)
+  | 's' <- c,
+    Nothing <- uiState^.minibufferL
+  = let filePath = (uiState^.filePathL) -<.> "fst"
+        mb (Left e) = do
+          MB.message ("Error: " ++ E.displayException (e :: E.IOException))
+          MB.abort
+        mb (Right ()) = do
+          MB.message ("Saved to " ++ filePath ++ ".")
+          MB.abort
+    in do
       result <- liftIO $ E.try $ saveForests filePath $
         uiState^.editorsL.to Z.toList^..each.forestL
         -- a list containing the forest of each editor in uiState^.editorsL
-      let mb = case result of
-            Left e -> do
-              MB.message ("Error: " ++ E.displayException (e :: E.IOException))
-              MB.abort
-            Right () -> do
-              MB.message ("Saved to " ++ filePath ++ ".")
-              MB.abort
-      continue (uiState & minibufferL .~ Just mb)
-  
+      continue (uiState & minibufferL .~ Just (mb result))
+
 handleEvent uiState evt | Just mb <- uiState^.minibufferL = do
   newMB <- MB.handleMiniBufferEvent mb evt
   case newMB of
@@ -205,6 +202,5 @@ app = App {
   appChooseCursor = neverShowCursor,
   appHandleEvent = handleEvent,
   appStartEvent = return,
-  appAttrMap = const $ attrMap Graphics.Vty.defAttr $
-    [(focusAttr,V.white `on` V.black)]
+  appAttrMap = const $ attrMap Graphics.Vty.defAttr []
 }

@@ -1,4 +1,4 @@
-{- | 
+{- |
 
 Module:      Data.Paragraph
 Description: A data type for sequences of sentences
@@ -13,7 +13,7 @@ the end of a sentence, a period followed by whitespace does.
 -}
 
 module Data.Paragraph (
-  Paragraph,  
+  Paragraph,
   initText,cursorText,tailText,
   initSync, zipperWith,
   fromText, toText, Data.Paragraph.readFile

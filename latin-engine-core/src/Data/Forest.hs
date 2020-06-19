@@ -1,4 +1,4 @@
-{- | 
+{- |
 
 Module:      Data.Forest
 Description: Forests of parse trees
@@ -27,7 +27,7 @@ module Data.Forest (
   children,
   descendents,
   -- * Creating and Modifying
-  emptyForest,  
+  emptyForest,
   setRoot,
   addChild,
   clear,
@@ -36,7 +36,7 @@ module Data.Forest (
   deserialise,
   serialiseForests,
   deserialiseForests
-  )  
+  )
 where
 
 import           Control.Monad ((>=>))

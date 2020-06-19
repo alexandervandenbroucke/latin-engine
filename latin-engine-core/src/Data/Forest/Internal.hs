@@ -1,4 +1,4 @@
-{- | 
+{- |
 
 Module:      Data.Forest.Internal
 Description: Internals for forests of parse trees
