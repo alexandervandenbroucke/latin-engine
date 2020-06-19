@@ -52,12 +52,12 @@ null s = wordCount s == 0
 -- | Create a sentence from a 'T.Text', by splitting the text into words.
 makeSentence :: T.Text -> Sentence
 makeSentence text = Sentence (A.listArray (1,n) ws) where
-  ws = zipWith Word [1..] (T.words (removeTrailingFullStop text))
+  ws = zipWith Word [1..] (T.words (removeTrailingFullStops text))
   n = length ws
 
-removeTrailingFullStop :: T.Text -> T.Text
-removeTrailingFullStop sentence =
-  maybe sentence id (T.stripSuffix (T.pack ".") sentence)
+removeTrailingFullStops :: T.Text -> T.Text
+removeTrailingFullStops = go where
+  go sentence = maybe sentence go (T.stripSuffix (T.pack ".") sentence)
 
 
 -- | The number of words in this sentence.
@@ -81,7 +81,10 @@ words = A.elems . unSentence
 --
 -- The following property should hold for all sentences @s@
 --
--- prop> makeSentence (sentenceText s) = s
+-- prop> makeSentence . sentenceText = id
+--
+-- But the reverse propety does not necessarily hold, because full stops and
+-- spaces may be deleted.
 sentenceText :: Sentence -> T.Text
 sentenceText (Sentence ws) =
   T.unwords [txt | Word _ txt <- A.elems ws] <> T.pack "."
