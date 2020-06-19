@@ -1,6 +1,6 @@
 import qualified Data.Forest as F
 import qualified Data.List.Zipper as Z
-import qualified Data.Sentences as S
+import qualified Data.Paragraph as P
 import qualified Data.Text.IO as T
 import qualified Diagrams.Backend.Rasterific as R
 import           Diagrams.LatinEngine (sentencesDiagram)
@@ -15,7 +15,7 @@ main = do
   case args of
     [] -> putStrLn ("usage: " ++ progName ++ " filename")
     (filePath:_) -> do
-      sentences <- S.readFile filePath
+      sentences <- P.readFile filePath
       Just forests <- readForests (filePath -<.> "fst")
       let diagram =
             sentencesDiagram D.def (Z.toList sentences) forests
@@ -24,8 +24,7 @@ main = do
       R.renderRasterific (filePath -<.> "pdf") (D.dims2D width height) diagram
 
 readForests :: FilePath -> IO (Maybe [F.Forest])
-readForests filePath =
-  F.deserialiseForests <$> T.readFile filePath
+readForests filePath = F.deserialiseForests <$> T.readFile filePath
 
 -- Local Variables:
 -- dante-target: "render"

@@ -14,7 +14,7 @@ import qualified Control.Exception as E ()
 
 import qualified Data.Forest as F
 import qualified Data.Sentence as S
-import qualified Data.Sentences as S
+import qualified Data.Paragraph as P
 import           Lens.Micro
 import           UI.AnnotationEditor
 import qualified UI.MiniBuffer as MB
@@ -58,7 +58,7 @@ loadEditors :: FilePath -> IO UIState
 loadEditors filePath = do
   let displayIOException :: E.IOException -> String
       displayIOException = E.displayException
-  mSentences <- E.try (S.readFile filePath)
+  mSentences <- E.try (P.readFile filePath)
   case mSentences of
     Left e -> do
       let mb = MB.message ("Error: " ++ displayIOException e) >> MB.abort
@@ -78,7 +78,7 @@ loadEditors filePath = do
               mb = MB.message ("Loaded " ++ filePath) >> MB.abort
           return $
             uiState
-            & editorsL    %~ S.zipperWith setForest (Z.fromList forests)
+            & editorsL    %~ P.zipperWith setForest (Z.fromList forests)
             & minibufferL .~ Just mb
 
 safeWordNr :: Int -> S.Sentence -> MB.MiniBuffer Name S.Word
@@ -108,11 +108,11 @@ sentencesWidget :: UIState -> Widget Name
 sentencesWidget (UIState _ es mb) =
   hBorder
   <=>
-  sentenceWidget (S.initText (fmap editorSentence es))
+  sentenceWidget (P.initText (fmap editorSentence es))
   <=>
   padTopBottom 1 (maybe emptyWidget editorWidget $ Z.safeCursor es)
   <=>
-  sentenceWidget (S.tailText (fmap editorSentence es))
+  sentenceWidget (P.tailText (fmap editorSentence es))
   <=>
   hBorder
   <=>
