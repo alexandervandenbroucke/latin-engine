@@ -1,14 +1,22 @@
--- | A module for parsing a paragraph into individual sentences.
---
--- A sentence is recognised as a string of characters, not containing a period
--- followed by a space, terminated by a full stop and a space (except the
--- last sentence). The terminating full stop is not included in the sentence.
+{- | 
 
-module Data.Sentences (
-  Sentences,  
+Module:      Data.Paragraph
+Description: A data type for sequences of sentences
+Maintainer:  alexander.vandenbroucke@gmail.com
+
+A module for parsing a paragraph into individual sentences.
+
+A 'Paragraph' is a 'Z.Zipper' of 'S.Sentence's.
+Sentences are separated by whitespace. This is important, since sentences can
+contain periods (e.g., in initials), so a period does not necessarily signal
+the end of a sentence, a period followed by whitespace does.
+-}
+
+module Data.Paragraph (
+  Paragraph,  
   initText,cursorText,tailText,
   initSync, zipperWith,
-  fromText, toText, Data.Sentences.readFile
+  fromText, toText, Data.Paragraph.readFile
 )
 where
 
@@ -18,43 +26,48 @@ import qualified Data.Text.IO as T
 
 import qualified Data.Sentence as S
 
+-- | A Paragraph is a 'Z.Zipper' of 'S.Sentence's.
+type Paragraph = Z.Zipper S.Sentence
 
-type Sentences = Z.Zipper S.Sentence
-
-initText :: Sentences -> T.Text
+-- | The text above the cursor.
+initText :: Paragraph -> T.Text
 initText = toText . initp
 
-cursorText :: Sentences -> T.Text
+-- | The text of the sentence under the cursor,or empty if there is no such
+-- sentence.
+cursorText :: Paragraph -> T.Text
 cursorText = maybe T.empty S.sentenceText . Z.safeCursor
 
-tailText :: Sentences -> T.Text
+-- | The text below the cursor.
+tailText :: Paragraph -> T.Text
 tailText = toText . tailp
 
-fromText :: T.Text -> Sentences
+-- | Parse a 'T.Text'. into a paragraph.
+fromText :: T.Text -> Paragraph
 fromText =
   Z.fromList
   . filter (not . S.null)
-  . map (S.makeSentence . removeTrailingFullStop . removeTrailingNewline)
+  . map (S.makeSentence . (<> T.pack ".") . removeTrailingNewline)
   . T.splitOn (T.pack ". ")
 
-removeTrailingFullStop :: T.Text -> T.Text
-removeTrailingFullStop sentence =
-  maybe sentence id (T.stripSuffix (T.pack ".") sentence)
-
+-- | Remove trailing new lines from the end of a 'T.Text'.
 removeTrailingNewline :: T.Text -> T.Text
 removeTrailingNewline sentence =
   maybe sentence id (T.stripSuffix (T.pack "\n") sentence)
 
 
--- | Note that is may not be an exact inverse of 'fromText', a final period
--- can be added, empty lines may be removed.
-toText :: Sentences -> T.Text
+-- | Turn a 'Paragraph' into text, adding the appropriate whitespaces between
+-- sentences.
+-- Note that is may not be an exact inverse of 'fromText',
+-- empty lines and newlines may be removed.
+toText :: Paragraph -> T.Text
 toText = T.intercalate (T.pack " ") . map S.sentenceText . Z.toList
 -- note, with the current representation, this could be quite inefficient,
 -- since the text is already there in memory and sentences are guaranteed to
 -- be contiguous.
 
-readFile :: String -> IO Sentences
+-- | Read and parse a file.
+readFile :: FilePath -> IO Paragraph
 readFile = fmap fromText . T.readFile
 
 -- | Return all elements in the zipper to the left of the cursor
@@ -75,7 +88,7 @@ initSync za zb = go (Z.start za) zb where
     | Z.beginp z' = z
     | otherwise = go (Z.right z) (Z.left z')
 
--- | Like 'zipWith' for lists
+-- | Like 'zipWith' for lists.
 zipperWith :: (a -> b -> c) -> Z.Zipper a -> Z.Zipper b -> Z.Zipper c
 zipperWith f (Z.Zip as as') (Z.Zip bs bs') =
   Z.Zip (zipWith f as bs) (zipWith f as' bs')

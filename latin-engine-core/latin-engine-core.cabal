@@ -19,7 +19,7 @@ extra-source-files:  CHANGELOG.md
 library
   hs-source-dirs:      src/
   exposed-modules:     Data.Sentence,
-                       Data.Sentences,
+                       Data.Paragraph,
                        Data.Forest,
                        Data.Forest.Internal
   build-depends:       base ^>=4.11.1.0,
