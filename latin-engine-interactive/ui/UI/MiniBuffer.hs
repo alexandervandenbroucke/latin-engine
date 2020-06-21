@@ -56,6 +56,7 @@ can be created with 'promptPrimitive'.
 module UI.MiniBuffer (
   -- * Data Type
   MiniBuffer(..),
+  hasAborted,
   -- * Smart constructors
   abort,
   message,
@@ -152,6 +153,11 @@ promptPrimitive name accept msg = Prompt accept e msg return where
 -- | Abort the current minibuffer.
 abort :: MiniBuffer n a
 abort = Abort
+
+-- | Return true if the minibuffer has aborted
+hasAborted :: MiniBuffer n a -> Bool
+hasAborted Abort = True
+hasAborted _     = False
 
 -- | Render the minibuffer.
 miniBufferWidget :: MiniBuffer n a -> Widget n

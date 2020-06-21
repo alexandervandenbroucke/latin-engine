@@ -1,5 +1,4 @@
 import qualified Data.Forest as F
-import qualified Data.List.Zipper as Z
 import qualified Data.Paragraph as P
 import qualified Data.Text.IO as T
 import qualified Diagrams.Backend.Rasterific as R
@@ -18,7 +17,7 @@ main = do
       sentences <- P.readFile filePath
       Just forests <- readForests (filePath -<.> "fst")
       let diagram =
-            sentencesDiagram D.def (Z.toList sentences) forests
+            sentencesDiagram D.def sentences forests
           width  = D.width diagram
           height = D.height diagram      
       R.renderRasterific (filePath -<.> "pdf") (D.dims2D width height) diagram

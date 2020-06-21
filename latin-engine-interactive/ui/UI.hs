@@ -1,99 +1,144 @@
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
+
 module UI (app,initState,loadEditors) where
 
 import           Brick
 import           Brick.Widgets.Border
 import qualified Control.Exception as E
-import           Control.Monad.IO.Class
+import qualified Control.Exception as E ()
+import           Control.Monad.Except
+import qualified Control.Monad.Writer as W
 import qualified Data.List.Zipper as Z
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
-import           Graphics.Vty (defAttr)
-import qualified Graphics.Vty as V
+import qualified Graphics.Vty as Vty
+import           Prelude hiding (init,tail)
 import           System.FilePath ((-<.>))
-import qualified Control.Exception as E ()
+import           Text.Read (readMaybe)
 
 import qualified Data.Forest as F
 import qualified Data.Sentence as S
 import qualified Data.Paragraph as P
 import           Lens.Micro
-import           UI.AnnotationEditor
+import qualified UI.SentenceEditor as SE
 import qualified UI.MiniBuffer as MB
+import qualified UI.IDIndexedEditor as ID
 
-data Name = MB | FB deriving (Eq,Ord,Show)
+data Name = MB | PAR | ANN deriving (Eq,Ord,Show)
 
 -------------------------------------------------------------------------------
 -- UIState and Lenses
 
+type Editors = (SE.Editor, ID.Editor T.Text)
+
 data UIState = UIState {
-  uiFilePath    :: FilePath,
-  uiEditors     :: Z.Zipper Editor,
-  uiMinibuffer  :: Maybe (MB.MiniBuffer Name (UIState -> UIState))
+  uiFilePath   :: FilePath,
+  uiEditors    :: Z.Zipper Editors,
+  uiMinibuffer :: MB.MiniBuffer Name (UIState -> UIState),
+  uiFocused    :: Name
 }
 
 filePathL :: Lens' UIState FilePath
 filePathL = lens uiFilePath (\e fp -> e{uiFilePath = fp})
 
-editorsL :: Lens' UIState (Z.Zipper Editor)
+editorsL :: Lens' UIState (Z.Zipper Editors)
 editorsL = lens uiEditors (\e z -> e{uiEditors = z})
 
+editorL :: Lens' UIState (Maybe Editors)
+editorL = editorsL.safeCursorL
+
+safeCursorL :: Lens' (Z.Zipper a) (Maybe a)
+safeCursorL = lens Z.safeCursor setter where
+  setter z Nothing  = Z.delete z
+  setter z (Just x) = Z.insert x (Z.delete z)
+
+sentenceL :: Traversal' UIState SE.Editor
+sentenceL = editorL._Just._1
+
+annotationL :: Traversal' UIState (ID.Editor T.Text)
+annotationL = editorL._Just._2
+
 minibufferL
-  :: Lens' UIState (Maybe (MB.MiniBuffer Name (UIState -> UIState)))
+  :: Lens' UIState (MB.MiniBuffer Name (UIState -> UIState))
 minibufferL = lens uiMinibuffer (\e mb -> e{uiMinibuffer = mb})
 
-cursorL :: Lens' (Z.Zipper a) (Maybe a)
-cursorL = lens Z.safeCursor modify where
-  modify z Nothing  = Z.delete z
-  modify z (Just x) = Z.replace x z
-
-currentEditorL :: Lens' UIState (Maybe Editor)
-currentEditorL = editorsL.cursorL
+focusedL :: Lens' UIState Name
+focusedL = lens uiFocused (\e name -> e{uiFocused = name})
 
 -------------------------------------------------------------------------------
 -- State loading
 
+displayIOError :: E.IOException -> String
+displayIOError e = "Error: " ++ E.displayException e
+
 initState :: FilePath -> UIState
-initState filePath = UIState filePath Z.empty Nothing
+initState filePath = UIState filePath Z.empty MB.abort PAR where
+
+loadParagraph :: (MonadIO m, MonadError String m) => FilePath -> m [SE.Editor]
+loadParagraph filePath = do
+  paragraph <- liftIO (E.try $ P.readFile filePath) >>=
+    either (throwError . displayIOError) return
+  return $ map SE.makeEmptyEditor paragraph
+
+loadForests :: (MonadIO m, MonadError String m) => FilePath -> m [F.Forest]
+loadForests filePath = do
+  fileData <- liftIO (E.try $ T.readFile filePath) >>=
+    either (throwError . displayIOError) return
+  maybe (throwError $ "Warning: invalid forest file: " ++ filePath) return $
+    F.deserialiseForests fileData
+
+loadAnnotations
+  :: (MonadIO m, MonadError String m) => FilePath -> m [ID.Editor T.Text]
+loadAnnotations filePath = do
+  annotations <- liftIO (E.try $ T.readFile filePath) >>=
+    either (throwError . displayIOError) return
+  maybe (throwError $ "Warning: invalid annotation file: " ++ filePath) return $
+    mapM ID.deserialise $ T.lines annotations
+    
 
 loadEditors :: FilePath -> IO UIState
 loadEditors filePath = do
-  let displayIOException :: E.IOException -> String
-      displayIOException = E.displayException
-  mSentences <- E.try (P.readFile filePath)
-  case mSentences of
-    Left e -> do
-      let mb = MB.message ("Error: " ++ displayIOException e) >> MB.abort
-      return (initState filePath & minibufferL .~ Just mb)
-    Right sentences -> do
-      let editors = fmap makeEmptyEditor sentences
-          uiState = initState filePath & editorsL .~ editors
-          filePathForest = filePath -<.> "fst"
-      eForests <- E.try (loadForests filePathForest)
-                  <&> _Left %~ ("Error: " ++) . displayIOException
-      case eForests >>= maybe (Left "Warning: invalid forest file.") Right of
-        Left e -> do
-          let mb = MB.message e >> MB.abort
-          return (uiState & minibufferL .~ Just mb)
-        Right forests -> do
-          let setForest f e = e & forestL .~ f
-              mb = MB.message ("Loaded " ++ filePath) >> MB.abort
-          return $
-            uiState
-            & editorsL    %~ P.zipperWith setForest (Z.fromList forests)
-            & minibufferL .~ Just mb
+  let ExceptT go = W.runWriterT $ do
+        paragraph <- loadParagraph filePath
+        forests <- loadForests (filePath -<.> "fst") `catchError` \e -> do
+          W.tell [e] >> return (repeat F.emptyForest)
+        annotations <- loadAnnotations (filePath -<.> "ann") `catchError` \e -> 
+          W.tell [e] >> return (repeat ID.empty)
+        let makeEditors se f ann = (se & SE.forestL .~ f, ann)
+        initState filePath
+          & editorsL .~ Z.fromList (zipWith3 makeEditors paragraph forests annotations)
+          & return
+  eUIState <- go
+  return $ case eUIState of
+    Left e ->
+      let mb  = MB.message e >> MB.abort
+      in initState filePath & minibufferL .~ mb
+    Right (uiState,warnings) ->
+      let mb = mapM MB.message warnings >> MB.abort
+      in uiState & minibufferL .~ mb
+    
+  -- return . (minibufferL .~ (MB.message ("Loaded " ++ filePath) >> MB.abort))
 
-safeWordNr :: Int -> S.Sentence -> MB.MiniBuffer Name S.Word
-safeWordNr n sentence
-  | Just x <- S.wordNr n sentence  = return x
-  | otherwise = do
-      MB.message "Invalid word number. Hit Enter to continue."
-      MB.abort
 
-saveForests :: FilePath -> [F.Forest] -> IO ()
-saveForests filePath = T.writeFile filePath . F.serialiseForests
+saveEditors :: FilePath -> UIState -> IO ()
+saveEditors filePath uiState  = do
+  let saveForests = T.writeFile (filePath -<.> "fst") . F.serialiseForests
+      saveAnnotations =
+        T.writeFile (filePath -<.> "ann") . T.unlines . map ID.serialise
+  saveForests (uiState^.editorsL.to Z.toList^..each._1.SE.forestL)
+  saveAnnotations (uiState^.editorsL.to Z.toList^..each._2)
 
-loadForests :: FilePath -> IO (Maybe [F.Forest])
-loadForests filePath =
-  T.readFile filePath >>= return . F.deserialiseForests
+
+-- | Return all elements in the zipper to the left of the cursor
+init :: Z.Zipper a -> Z.Zipper a
+init (Z.Zip [] _) = Z.Zip [] []
+init (Z.Zip (x:xs) _) = Z.Zip xs [x]
+
+-- | Return all elements in the zipper to the right of the cursor
+tail :: Z.Zipper a -> Z.Zipper a
+tail (Z.Zip _ []) = Z.Zip [] []
+tail (Z.Zip _ (_:xs)) = Z.Zip [] xs
 
 
 -------------------------------------------------------------------------------
@@ -104,103 +149,165 @@ sentenceWidget text = txtWrap (T.map explicitNewline text) where
   explicitNewline '\n' = '\8617'
   explicitNewline c = c
 
-sentencesWidget :: UIState -> Widget Name
-sentencesWidget (UIState _ es mb) =
+paragraphWidget :: UIState -> Widget Name
+paragraphWidget uiState =
+  let attr
+        | uiState^.focusedL == PAR = focusedBorderAttr
+        | otherwise = unFocusedBorderAttr
+      parBorder = withAttr attr (hBorderWithLabel (str "[Paragraph]"))
+      inits = sentenceWidget $ P.toText $
+        uiState^.editorsL.to (Z.toList . init)^..each._1.SE.sentenceL
+      sentence = padTopBottom 1 $
+        maybe emptyWidget SE.editorWidget $ uiState^?sentenceL
+      tails = sentenceWidget $ P.toText $
+        uiState^.editorsL.to (Z.toList . tail)^..each._1.SE.sentenceL
+  in parBorder <=> inits <=> sentence <=> tails
+
+annotationWidget :: UIState -> Widget Name
+annotationWidget uiState =
+  let attr
+        | uiState^.focusedL == ANN = focusedBorderAttr
+        | otherwise = unFocusedBorderAttr
+      annBorder = withAttr attr (hBorderWithLabel (str "[Annotation]"))
+      widget = case uiState^?annotationL of
+        Nothing -> ID.editorWidgetUnfocused T.unpack ID.empty
+        Just editor
+          | uiState^.focusedL == ANN -> ID.editorWidget T.unpack editor
+          | otherwise -> ID.editorWidgetUnfocused T.unpack editor
+  in annBorder <=> padBottom Max widget
+
+allWidgets :: UIState -> Widget Name
+allWidgets uiState =
+  paragraphWidget uiState
+  <=>
+  annotationWidget uiState
+  <=>
   hBorder
   <=>
-  sentenceWidget (P.initText (fmap editorSentence es))
-  <=>
-  padTopBottom 1 (maybe emptyWidget editorWidget $ Z.safeCursor es)
-  <=>
-  sentenceWidget (P.tailText (fmap editorSentence es))
-  <=>
-  hBorder
-  <=>
-  maybe (str "R)oot C)hild E)rase S)ave Q)uit") MB.miniBufferWidget mb
+  (if MB.hasAborted (uiState^.minibufferL) then
+     str "R)oot C)hild E)rase S)ave F)ocus A)nnotate U)nannotate Q)uit"
+    else
+     MB.miniBufferWidget (uiState^.minibufferL))
 
 -------------------------------------------------------------------------------
 -- Event handling
+
+safeWordNr :: Int -> S.Sentence -> MB.MiniBuffer Name S.Word
+safeWordNr n sentence
+  | Just x <- S.wordNr n sentence  = return x
+  | otherwise = do
+      MB.message "Invalid word number. Hit Enter to continue."
+      MB.abort
 
 handleEvent :: UIState -> BrickEvent Name () -> EventM Name (Next UIState)
 handleEvent uiState (AppEvent ()) =
   continue uiState
 
-handleEvent uiState (VtyEvent (V.EvKey V.KEsc [])) = halt uiState
+handleEvent uiState (VtyEvent (Vty.EvKey Vty.KEsc [])) = halt uiState
 
-handleEvent uiState (VtyEvent (V.EvKey V.KUp [])) =
-  continue (uiState & editorsL %~ Z.left)
+handleEvent uiState (VtyEvent (Vty.EvKey Vty.KUp []))
+  | PAR <- uiState^.focusedL = continue (uiState & editorsL %~ Z.left)
+  | ANN <- uiState^.focusedL = continue (uiState & annotationL %~ ID.prev)
+  | MB  <- uiState^.focusedL = continue uiState
 
-handleEvent uiState (VtyEvent (V.EvKey V.KDown []))
-  | Z.endp (uiState^.editorsL) = continue uiState
-  | otherwise = continue (uiState & editorsL %~ Z.right)
+handleEvent uiState (VtyEvent (Vty.EvKey Vty.KDown []))
+  | PAR <- uiState^.focusedL, not (Z.endp (uiState^.editorsL)) =
+      continue (uiState & editorsL %~ Z.right)
+  | ANN <- uiState^.focusedL = continue (uiState & annotationL %~ ID.next)
+  | otherwise = continue uiState
 
-handleEvent uiState (VtyEvent (V.EvKey (V.KChar c) []))
+handleEvent uiState evt
+  | mb <- uiState^.minibufferL, not (MB.hasAborted mb) = do
+      newMB <- MB.handleMiniBufferEvent mb evt
+      case newMB of
+        MB.Abort -> continue (uiState & minibufferL .~ MB.Abort)
+        MB.Return f -> continue (f uiState)
+        _ -> continue (uiState & minibufferL .~ newMB)
+
+handleEvent uiState (VtyEvent (Vty.EvKey (Vty.KChar c) []))
   | 'q' <- c
   = halt uiState
-  | 'r' <- c,
-    Nothing <- uiState^.minibufferL,
-    Just e <- uiState^.editorsL.to Z.safeCursor
-  = let mb = do
-            root <- MB.promptNatural MB "root (C-g to cancel): "
-            _ <- safeWordNr root (editorSentence e)
-            return $ \s ->
-              s & minibufferL .~ Nothing
-                & currentEditorL._Just.forestL %~ F.setRoot root
-    in continue (uiState & minibufferL .~ Just mb)
-  | 'c' <- c,
-    Nothing <- uiState^.minibufferL,
-    Just e <- uiState^.editorsL.to Z.safeCursor
-  = let mb = do
-          child <- MB.promptNatural MB "child (C-g to cancel): "
-          _ <- safeWordNr child (editorSentence e)
-          parent <- MB.promptNatural MB $
-            "child  " ++ show c ++ " of (C-g to cancel): "
-          _ <- safeWordNr parent (editorSentence e)
-          return $ \s ->
-            s & minibufferL .~ Nothing
-              & currentEditorL._Just.forestL %~ F.addChild child parent
-    in continue (uiState & minibufferL .~ Just mb)
-  | 'e' <- c,
-    Nothing <- uiState^.minibufferL,
-    Just e <- uiState^.editorsL.to Z.safeCursor
-  = let mb = do
-          n <- MB.promptNatural MB "node (C-g to cancel): "
-          _ <- safeWordNr n (editorSentence e)
-          return $ \s ->
-            s & minibufferL .~ Nothing
-              & currentEditorL._Just.forestL %~ F.clear n
-    in continue (uiState & minibufferL .~ Just mb)
-  | 's' <- c,
-    Nothing <- uiState^.minibufferL
-  = let filePath = (uiState^.filePathL) -<.> "fst"
-        mb (Left e) = do
+  | 'f' <- c
+  = let swap MB  = MB
+        swap PAR = if uiState^?annotationL == Nothing then PAR else ANN
+        swap ANN = PAR
+    in continue (uiState & focusedL %~ swap)
+  | 's' <- c
+  = let mb (Left e) = do
           MB.message ("Error: " ++ E.displayException (e :: E.IOException))
           MB.abort
         mb (Right ()) = do
-          MB.message ("Saved to " ++ filePath ++ ".")
+          MB.message ("Saved to " ++ uiState^.filePathL ++ ".")
           MB.abort
     in do
-      result <- liftIO $ E.try $ saveForests filePath $
-        uiState^.editorsL.to Z.toList^..each.forestL
-        -- a list containing the forest of each editor in uiState^.editorsL
-      continue (uiState & minibufferL .~ Just (mb result))
-
-handleEvent uiState evt | Just mb <- uiState^.minibufferL = do
-  newMB <- MB.handleMiniBufferEvent mb evt
-  case newMB of
-    MB.Abort -> continue (uiState & minibufferL .~ Nothing)
-    MB.Return f -> continue (f uiState)
-    _ -> continue (uiState & minibufferL .~ Just newMB)
-
+      result <- liftIO $ E.try $ saveEditors (uiState^.filePathL) uiState
+      continue (uiState & minibufferL .~ mb result)
+  | Just editors <- uiState^.editorL
+  = let mb = do
+          editors' <- handleEditorEvent editors c
+          return (\s -> s & editorL .~ Just editors' & minibufferL .~ MB.abort)
+    in continue (uiState & minibufferL .~ mb)
 handleEvent uiState _evt = continue uiState
 
+handleEditorEvent
+  :: Editors
+  -> Char
+  -> MB.MiniBuffer Name Editors
+handleEditorEvent editors c
+  | 'r' <- c = do
+      root <- MB.promptNatural MB "root (C-g to cancel): "
+      _ <- safeWordNr root (editors^._1.SE.sentenceL)
+      return (editors & _1.SE.forestL %~ F.setRoot root)
+  | 'c' <- c = do
+      child <- MB.promptNatural MB "child (C-g to cancel): "
+      _ <- safeWordNr child (editors^._1.SE.sentenceL)
+      parent <- MB.promptNatural MB $
+        "child  " ++ show c ++ " of (C-g to cancel): "
+      _ <- safeWordNr parent (editors^._1.SE.sentenceL)
+      return (editors & _1.SE.forestL %~ F.addChild child parent)
+  | 'e' <- c = do
+      n <- MB.promptNatural MB "erase (C-g to cancel): "
+      _ <- safeWordNr n (editors^._1.SE.sentenceL)
+      return (editors & _1.SE.forestL %~ F.clear n)
+  | 'a' <- c = do
+      n <- MB.promptNatural MB "annotate (C-g to cancel): "
+      _ <- safeWordNr n (editors^._1.SE.sentenceL)
+      annotation <- MB.promptString MB (show n ++ ": ")
+      case annotation of
+        "" -> MB.message "Error: empty annotation." >> MB.abort
+        _  -> return (editors & _2.ID.valueL n .~ Just (T.pack annotation))
+  | 'u' <- c = do
+      n <- MB.promptNatural MB "unannotate (C-g to cancel): "
+      _ <- safeWordNr n (editors^._1.SE.sentenceL)
+      case editors^._2.ID.valueL n of
+        Nothing -> MB.message "Error: no such annotation." >> MB.abort
+        Just{} -> return (editors & _2.ID.valueL n .~ Nothing)
+  | otherwise = MB.abort
 
+focusedBorderAttr :: AttrName
+focusedBorderAttr = "focused-border"
+
+unFocusedBorderAttr :: AttrName
+unFocusedBorderAttr = "unfocused-border"
 
 app :: App UIState () Name
 app = App {
-  appDraw = pure . sentencesWidget,
+  appDraw = pure . allWidgets,
   appChooseCursor = neverShowCursor,
   appHandleEvent = handleEvent,
   appStartEvent = return,
-  appAttrMap = const $ attrMap Graphics.Vty.defAttr []
+  appAttrMap =
+      let gray = Vty.rgbColor (20 :: Int) 20 20
+          attrs = [
+            (ID.focusedAttr <> ID.lineAttr,
+              Vty.defAttr `Vty.withStyle` Vty.standout),
+            (ID.unFocusedAttr,
+              fg gray),
+            (ID.unFocusedAttr <> ID.lineAttr,
+              gray `on` Vty.white),
+            (focusedBorderAttr,
+              Vty.defAttr),
+            (unFocusedBorderAttr,
+              fg gray)]
+  in const $ attrMap Vty.defAttr attrs
 }

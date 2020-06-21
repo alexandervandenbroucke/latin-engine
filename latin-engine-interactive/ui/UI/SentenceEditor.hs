@@ -1,12 +1,12 @@
 {- |
 
-Module:      UI.AnnotationEditor
-Description: A widget for editing forests of parse trees.
+Module:      UI.Sentence
+Description: A widget for editing forests of parse trees of a sentence.
 Maintainer:  alexander.vandenbroucke@gmail.com
 
 -}
 
-module UI.AnnotationEditor (
+module UI.SentenceEditor (
   -- * Editor State
   Editor(..),
   sentenceL, forestL,
