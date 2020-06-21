@@ -17,7 +17,7 @@ would be nice to have alternating colours
 
 Maybe support multiple columns?
 
-ID | Declension/Conjugatin | 
+ID | Declension/Conjugatin |
 1  | II
 operations: focus on a value, focus next/prev, delete focused value, add a
 value
@@ -128,7 +128,7 @@ editorWidgetMultiAttr attr headers editor
       idcolumn = map (T.pack . show) ids
       idRows = zipWith (:) idcolumn rows
       columns = transpose idRows
-      widths = map (maximum . map T.length) columns
+      widths = map (maximum . map T.length) (zipWith (:) headers columns)
       headerRow = hBox (zipWith cell widths headers)
       row n cells
         | n == editor^.focusL =
