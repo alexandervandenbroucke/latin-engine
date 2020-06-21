@@ -275,7 +275,8 @@ handleEditorEvent editors uiState c
   | 'a' <- c = do
       n <- MB.promptNatural MB "annotate (C-g to cancel): "
       w <- safeWordNr n (editors^._1.SE.sentenceL)
-      annotation <- MB.promptString MB (show n ++ ": ")
+      annotation <- MB.promptString MB $
+        "annotate " ++ show n ++ " (C-g to cancel): "
       case annotation of
         "" -> MB.message "Error: empty annotation." >> MB.abort
         _  -> return $
