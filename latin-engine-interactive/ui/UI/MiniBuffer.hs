@@ -107,7 +107,7 @@ message msg = Message msg (return ())
 -- @promptString name prmpt@ creates a minibuffer that shows @prmpt@ followed
 -- by a text editor named @name@.
 promptString :: n -> String -> MiniBuffer n String
-promptString name msg = promptPrimitive name (const True) msg
+promptString name msg = promptPrimitive name (const True) msg ""
 
 -- | Create a prompt that accepts any 'Read'able.
 --
@@ -146,9 +146,10 @@ promptPrimitive
   :: n                    -- ^ name of the underlying editor
   -> (Char -> Bool)       -- ^ predicate of characters to accept
   ->  String              -- ^ prompt message
+  -> String               -- ^ Initial buffer contents
   -> MiniBuffer n String
-promptPrimitive name accept msg = Prompt accept e msg return where
-  e = E.editorText name (Just 1) T.empty
+promptPrimitive name accept msg initial = Prompt accept e msg return where
+  e = E.editorText name (Just 1) (T.pack initial)
 
 -- | Abort the current minibuffer.
 abort :: MiniBuffer n a
