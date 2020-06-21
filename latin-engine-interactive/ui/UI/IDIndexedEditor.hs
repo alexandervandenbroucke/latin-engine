@@ -4,23 +4,15 @@ Module:      UI.AnnotationEditor
 Description: A widget for editing forests of parse trees.
 Maintainer:  alexander.vandenbroucke@gmail.com
 
-An editor for things that are indexed by 'WordId'
+An editor for things that are indexed by 'WordId' and shown in a column.
 
 Looking like this:
 
-> ID |
-> ---+------------------------
-> 1  | ACC m S < dux
-> 50 | A ind. pres. 3S < amare
+> ID Word   Annotation 
+> 3  Gallia NOM F S < Gallia, -ae; subject
+> 6  Divisa P ind perf 3 S < dividere, -eo; main verb
 
-would be nice to have alternating colours
-
-Maybe support multiple columns?
-
-ID | Declension/Conjugatin |
-1  | II
-operations: focus on a value, focus next/prev, delete focused value, add a
-value
+Operations: request focused value, focus next/prev, delete value, add a value
 -}
 
 {-# LANGUAGE RankNTypes #-}
@@ -37,8 +29,10 @@ import qualified Data.Text as T
 import           Lens.Micro
 import           Text.Read (readMaybe)
 
+-- | A 'S.WordId' indexed map of things
 type Annotations a = M.IntMap a
 
+-- | Editor data type, contains the focused word id and annotations.
 data Editor a = Editor {
   _focused :: WordId,
   _values  :: Annotations a
@@ -67,44 +61,53 @@ lookupL n = lens (M.lookup n) setter where
 valueL :: WordId -> Lens' (Editor a) (Maybe a)
 valueL wordId = valuesL.lookupL wordId
 
-mapWithWordId :: (WordId -> a -> b) -> Annotations a -> Annotations b
-mapWithWordId f = M.mapWithKey f
-
-traverseWithKey
-  :: Applicative f
-  => (WordId -> a -> f b)
-  -> Annotations a
-  -> f (Annotations b)
-traverseWithKey = M.traverseWithKey
-
+-- | The prefix attribute of this widget
 editAttr :: AttrName
 editAttr = "id-indexed-editor"
 
+-- | The attribute prefix when the editor has focus.
 focusedAttr :: AttrName
 focusedAttr = editAttr <> "focused"
 
+-- | The attribute prefix when the editor does not have focus.
 unFocusedAttr :: AttrName
 unFocusedAttr = editAttr <> "unfocused"
 
+-- | The attribute of the selected line
 lineAttr :: AttrName
 lineAttr = "line"
 
+-- | Move the focused value to the next 'WordId' that has an annotation.
 next :: Editor a -> Editor a
 next editor = case M.lookupGT (editor^.focusL) (editor^.valuesL) of
   Nothing         -> editor
   Just (wordId,_) -> editor & focusL .~ wordId
 
+-- | Move the focused value to the previous 'WordId' that has an annotation.
 prev :: Editor a -> Editor a
 prev editor = case M.lookupLT (editor^.focusL) (editor^.valuesL) of
   Nothing         -> editor
   Just (wordId,_) -> editor & focusL .~ wordId
 
-editorWidget :: (a -> String) -> Editor a -> Widget n
+-- | A widget for a focused 'Editor' that has annotations that can be show
+-- as a 'String'.
+--
+-- It's useful to have function argument instead of 'Show', because show
+-- is often not desirable, e.g., for @Text@ values.
+editorWidget
+  :: (a -> String) -- ^ The string representation of @a@
+  -> Editor a      -- ^ the editor
+  -> Widget n
 editorWidget = editorWidgetAttr focusedAttr
 
+-- | Like 'editorWidget' but unfocused.
 editorWidgetUnfocused :: (a -> String) -> Editor a -> Widget n
 editorWidgetUnfocused = editorWidgetAttr unFocusedAttr
 
+-- | A widget for an 'Editor' that has annotations that can be shown as a
+-- 'String', using a specific 'AttrName' for styling.
+--
+-- e.g., use 'focusedAttr' or 'unFocusedAttr'.
 editorWidgetAttr :: AttrName -> (a -> String) -> Editor a -> Widget n
 editorWidgetAttr attr _ editor
   | editor^.valuesL.to null = withAttr attr (str "No Annotations")
@@ -120,7 +123,16 @@ editorWidgetAttr attr shew editor =
       header = padRight Max $ str $ padToMaxWidth "ID" ++ " Annotation"
   in vBox (header:map lineWidget (editor^.valuesL.to M.toAscList))
 
-editorWidgetMultiAttr :: AttrName -> [T.Text] -> Editor [T.Text] -> Widget n
+-- | A widget for an 'Editor' that has several columns of annotations of
+-- 'T.Text' values.
+--
+-- The 'Editor' is shown in a table format and with the focused annotation
+-- is highlighted based on the 'lineAttr' of the specified attribute.
+editorWidgetMultiAttr
+  :: AttrName -- ^ Attribute to determine styling.
+  -> [T.Text] -- ^ Table headers
+  -> Editor [T.Text] -- ^ The editor
+  -> Widget n
 editorWidgetMultiAttr attr headers editor
   | editor^.valuesL.to null = withAttr attr (str "No Annotations")
   | otherwise = vBox (headerRow : zipWith row ids idRows) where
@@ -139,9 +151,11 @@ editorWidgetMultiAttr attr headers editor
       cell n = padRight (Pad 1) . str . pad n . T.unpack
       pad n s = s ++ replicate (n - length s) ' '
 
+-- | Serialise and 'Editor'
 serialise :: Show a => Editor a -> T.Text
 serialise editor = T.pack $ show $ editor^.valuesL
 
+-- | Deserialise and 'Editor'
 deserialise :: Read a => T.Text -> Maybe (Editor a)
 deserialise text = setv <$> readMaybe (T.unpack text) where
   setv v = empty & valuesL .~ v
