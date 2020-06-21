@@ -300,7 +300,7 @@ unFocusedBorderAttr = "unfocused-border"
 app :: App UIState () Name
 app = App {
   appDraw = pure . allWidgets,
-  appChooseCursor = neverShowCursor,
+  appChooseCursor = const (showCursorNamed MB),
   appHandleEvent = handleEvent,
   appStartEvent = return,
   appAttrMap =

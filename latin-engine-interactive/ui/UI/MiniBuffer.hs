@@ -160,11 +160,11 @@ hasAborted Abort = True
 hasAborted _     = False
 
 -- | Render the minibuffer.
-miniBufferWidget :: MiniBuffer n a -> Widget n
+miniBufferWidget :: (Show n, Ord n) => MiniBuffer n a -> Widget n
 miniBufferWidget (Return _) = emptyWidget
 miniBufferWidget (Message msg _) = strWrap msg
 miniBufferWidget (Prompt _ e msg _) =
-  str msg <+> (txt $ mconcat $ E.getEditContents e)
+  str msg <+> E.renderEditor (txt . mconcat) True e
 miniBufferWidget Abort = emptyWidget
 
 -- | Handle input events for the minibuffer.
