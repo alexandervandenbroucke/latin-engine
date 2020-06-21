@@ -28,14 +28,14 @@ value
 
 module UI.IDIndexedEditor where
 
-
 import           Brick
 import           Brick.AttrMap (AttrName)
 import qualified Data.IntMap as M
-import           Text.Read (readMaybe)
+import           Data.List (transpose)
 import           Data.Sentence (WordId)
 import qualified Data.Text as T
 import           Lens.Micro
+import           Text.Read (readMaybe)
 
 type Annotations a = M.IntMap a
 
@@ -66,6 +66,16 @@ lookupL n = lens (M.lookup n) setter where
 -- | A lens to the value associated with a particular word.
 valueL :: WordId -> Lens' (Editor a) (Maybe a)
 valueL wordId = valuesL.lookupL wordId
+
+mapWithWordId :: (WordId -> a -> b) -> Annotations a -> Annotations b
+mapWithWordId f = M.mapWithKey f
+
+traverseWithKey
+  :: Applicative f
+  => (WordId -> a -> f b)
+  -> Annotations a
+  -> f (Annotations b)
+traverseWithKey = M.traverseWithKey
 
 editAttr :: AttrName
 editAttr = "id-indexed-editor"
@@ -110,8 +120,28 @@ editorWidgetAttr attr shew editor =
       header = padRight Max $ str $ padToMaxWidth "ID" ++ " Annotation"
   in vBox (header:map lineWidget (editor^.valuesL.to M.toAscList))
 
+editorWidgetMultiAttr :: AttrName -> [T.Text] -> Editor [T.Text] -> Widget n
+editorWidgetMultiAttr attr headers editor
+  | editor^.valuesL.to null = withAttr attr (str "No Annotations")
+  | otherwise = vBox (headerRow : zipWith row ids idRows) where
+      (ids,rows) = unzip (editor^.valuesL.to M.toAscList)
+      idcolumn = map (T.pack . show) ids
+      idRows = zipWith (:) idcolumn rows
+      columns = transpose idRows
+      widths = map (maximum . map T.length) columns
+      headerRow = hBox (zipWith cell widths headers)
+      row n cells
+        | n == editor^.focusL =
+            withAttr (attr <> lineAttr) $ padRight Max $
+            hBox $ zipWith cell widths cells
+        | otherwise =
+            withAttr attr $ padRight Max $ hBox $ zipWith cell widths cells
+      cell n = padRight (Pad 1) . str . pad n . T.unpack
+      pad n s = s ++ replicate (n - length s) ' '
+
 serialise :: Show a => Editor a -> T.Text
 serialise editor = T.pack $ show $ editor^.valuesL
 
 deserialise :: Read a => T.Text -> Maybe (Editor a)
-deserialise text = Editor 0 <$> readMaybe (T.unpack text)
+deserialise text = setv <$> readMaybe (T.unpack text) where
+  setv v = empty & valuesL .~ v

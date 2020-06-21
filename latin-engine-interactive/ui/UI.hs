@@ -15,7 +15,6 @@ import qualified Data.Text.IO as T
 import qualified Graphics.Vty as Vty
 import           Prelude hiding (init,tail)
 import           System.FilePath ((-<.>))
-import           Text.Read (readMaybe)
 
 import qualified Data.Forest as F
 import qualified Data.Sentence as S
@@ -30,7 +29,7 @@ data Name = MB | PAR | ANN deriving (Eq,Ord,Show)
 -------------------------------------------------------------------------------
 -- UIState and Lenses
 
-type Editors = (SE.Editor, ID.Editor T.Text)
+type Editors = (SE.Editor, ID.Editor [T.Text])
 
 data UIState = UIState {
   uiFilePath   :: FilePath,
@@ -56,7 +55,7 @@ safeCursorL = lens Z.safeCursor setter where
 sentenceL :: Traversal' UIState SE.Editor
 sentenceL = editorL._Just._1
 
-annotationL :: Traversal' UIState (ID.Editor T.Text)
+annotationL :: Traversal' UIState (ID.Editor [T.Text])
 annotationL = editorL._Just._2
 
 minibufferL
@@ -89,13 +88,12 @@ loadForests filePath = do
     F.deserialiseForests fileData
 
 loadAnnotations
-  :: (MonadIO m, MonadError String m) => FilePath -> m [ID.Editor T.Text]
+  :: (MonadIO m, MonadError String m) => FilePath -> m [ID.Editor [T.Text]]
 loadAnnotations filePath = do
   annotations <- liftIO (E.try $ T.readFile filePath) >>=
     either (throwError . displayIOError) return
   maybe (throwError $ "Warning: invalid annotation file: " ++ filePath) return $
-    mapM ID.deserialise $ T.lines annotations
-    
+    mapM ID.deserialise (T.lines annotations)
 
 loadEditors :: FilePath -> IO UIState
 loadEditors filePath = do
@@ -115,10 +113,10 @@ loadEditors filePath = do
       let mb  = MB.message e >> MB.abort
       in initState filePath & minibufferL .~ mb
     Right (uiState,warnings) ->
-      let mb = mapM MB.message warnings >> MB.abort
-      in uiState & minibufferL .~ mb
-    
-  -- return . (minibufferL .~ (MB.message ("Loaded " ++ filePath) >> MB.abort))
+      let minibuffer
+            | null warnings = MB.message ("Loaded " ++ filePath) >> MB.abort
+            | otherwise = mapM MB.message warnings >> MB.abort
+      in uiState & minibufferL .~ minibuffer
 
 
 saveEditors :: FilePath -> UIState -> IO ()
@@ -169,11 +167,14 @@ annotationWidget uiState =
         | uiState^.focusedL == ANN = focusedBorderAttr
         | otherwise = unFocusedBorderAttr
       annBorder = withAttr attr (hBorderWithLabel (str "[Annotation]"))
+      headers = [T.pack "ID", T.pack "Word", T.pack "Annotation"]
       widget = case uiState^?annotationL of
         Nothing -> ID.editorWidgetUnfocused T.unpack ID.empty
         Just editor
-          | uiState^.focusedL == ANN -> ID.editorWidget T.unpack editor
-          | otherwise -> ID.editorWidgetUnfocused T.unpack editor
+          | uiState^.focusedL == ANN ->
+              ID.editorWidgetMultiAttr ID.focusedAttr headers editor
+          | otherwise ->
+              ID.editorWidgetMultiAttr ID.unFocusedAttr headers editor
   in annBorder <=> padBottom Max widget
 
 allWidgets :: UIState -> Widget Name
@@ -262,7 +263,7 @@ handleEditorEvent editors c
       child <- MB.promptNatural MB "child (C-g to cancel): "
       _ <- safeWordNr child (editors^._1.SE.sentenceL)
       parent <- MB.promptNatural MB $
-        "child  " ++ show c ++ " of (C-g to cancel): "
+        "child  " ++ show child ++ " of (C-g to cancel): "
       _ <- safeWordNr parent (editors^._1.SE.sentenceL)
       return (editors & _1.SE.forestL %~ F.addChild child parent)
   | 'e' <- c = do
@@ -271,11 +272,12 @@ handleEditorEvent editors c
       return (editors & _1.SE.forestL %~ F.clear n)
   | 'a' <- c = do
       n <- MB.promptNatural MB "annotate (C-g to cancel): "
-      _ <- safeWordNr n (editors^._1.SE.sentenceL)
+      w <- safeWordNr n (editors^._1.SE.sentenceL)
       annotation <- MB.promptString MB (show n ++ ": ")
       case annotation of
         "" -> MB.message "Error: empty annotation." >> MB.abort
-        _  -> return (editors & _2.ID.valueL n .~ Just (T.pack annotation))
+        _  -> return $
+          editors & _2.ID.valueL n .~ Just [S.wordText w,T.pack annotation]
   | 'u' <- c = do
       n <- MB.promptNatural MB "unannotate (C-g to cancel): "
       _ <- safeWordNr n (editors^._1.SE.sentenceL)
