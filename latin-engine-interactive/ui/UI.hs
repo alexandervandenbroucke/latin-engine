@@ -200,6 +200,11 @@ safeWordNr n sentence
       MB.message "Invalid word number. Hit Enter to continue."
       MB.abort
 
+updateMiniBuffer
+  :: UIState -> MB.MiniBuffer Name (UIState -> UIState) -> UIState
+updateMiniBuffer uiState (MB.Return f)  = f uiState
+updateMiniBuffer uiState mb = uiState & minibufferL .~ mb
+
 handleEvent :: UIState -> BrickEvent Name () -> EventM Name (Next UIState)
 handleEvent uiState (AppEvent ()) =
   continue uiState
@@ -219,11 +224,7 @@ handleEvent uiState (VtyEvent (Vty.EvKey Vty.KDown []))
 
 handleEvent uiState evt
   | mb <- uiState^.minibufferL, not (MB.hasAborted mb) = do
-      newMB <- MB.handleMiniBufferEvent mb evt
-      case newMB of
-        MB.Abort -> continue (uiState & minibufferL .~ MB.Abort)
-        MB.Return f -> continue (f uiState)
-        _ -> continue (uiState & minibufferL .~ newMB)
+      MB.handleMiniBufferEvent mb evt >>= continue . updateMiniBuffer uiState
 
 handleEvent uiState (VtyEvent (Vty.EvKey (Vty.KChar c) []))
   | 'q' <- c
@@ -244,17 +245,18 @@ handleEvent uiState (VtyEvent (Vty.EvKey (Vty.KChar c) []))
       result <- liftIO $ E.try $ saveEditors (uiState^.filePathL) uiState
       continue (uiState & minibufferL .~ mb result)
   | Just editors <- uiState^.editorL
-  = let mb = do
-          editors' <- handleEditorEvent editors c
-          return (\s -> s & editorL .~ Just editors' & minibufferL .~ MB.abort)
-    in continue (uiState & minibufferL .~ mb)
+  = continue $ updateMiniBuffer uiState $ do
+      editors' <- handleEditorEvent editors uiState c
+      return (\s -> s & editorL .~ Just editors' & minibufferL .~ MB.abort)
+
 handleEvent uiState _evt = continue uiState
 
 handleEditorEvent
   :: Editors
+  -> UIState
   -> Char
   -> MB.MiniBuffer Name Editors
-handleEditorEvent editors c
+handleEditorEvent editors uiState c
   | 'r' <- c = do
       root <- MB.promptNatural MB "root (C-g to cancel): "
       _ <- safeWordNr root (editors^._1.SE.sentenceL)
@@ -278,6 +280,8 @@ handleEditorEvent editors c
         "" -> MB.message "Error: empty annotation." >> MB.abort
         _  -> return $
           editors & _2.ID.valueL n .~ Just [S.wordText w,T.pack annotation]
+  | 'u' <- c, ANN <- uiState^.focusedL = do
+      return (editors & _2.ID.valueL (editors^._2.ID.focusL) .~ Nothing)
   | 'u' <- c = do
       n <- MB.promptNatural MB "unannotate (C-g to cancel): "
       _ <- safeWordNr n (editors^._1.SE.sentenceL)
