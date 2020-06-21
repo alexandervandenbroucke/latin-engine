@@ -276,11 +276,26 @@ handleEditorEvent editors uiState c
       n <- MB.promptNatural MB "erase (C-g to cancel): "
       _ <- safeWordNr n (editors^._1.SE.sentenceL)
       return (editors & _1.SE.forestL %~ F.clear n)
+  | 'a' <- c, ANN <- uiState^.focusedL,
+    n <- editors^._2.ID.focusL,
+    Just w <- S.wordNr n (editors^._1.SE.sentenceL),
+    Just [_,ann] <- editors^._2.ID.valueL n = do
+      let msg = "annotate " ++ show n ++ " (C-g to cancel): "            
+      annotation <- MB.promptPrimitive MB (const True) msg (T.unpack ann)
+      case annotation of
+        "" -> MB.message "Error: empty annotation." >> MB.abort
+        _  -> return $
+          editors & _2.ID.valueL n .~ Just [S.wordText w,T.pack annotation]
   | 'a' <- c = do
       n <- MB.promptNatural MB "annotate (C-g to cancel): "
       w <- safeWordNr n (editors^._1.SE.sentenceL)
-      annotation <- MB.promptString MB $
-        "annotate " ++ show n ++ " (C-g to cancel): "
+      let promptForAnnotation
+            | Just [_,ann] <- editors^._2.ID.valueL n =
+                MB.promptPrimitive MB (const True) msg (T.unpack ann)
+            | otherwise =
+                MB.promptString MB msg
+            where msg = "annotate " ++ show n ++ " (C-g to cancel): "
+      annotation <- promptForAnnotation
       case annotation of
         "" -> MB.message "Error: empty annotation." >> MB.abort
         _  -> return $
