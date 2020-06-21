@@ -66,7 +66,7 @@ focusedL :: Lens' UIState Name
 focusedL = lens uiFocused (\e name -> e{uiFocused = name})
 
 -------------------------------------------------------------------------------
--- State loading
+-- State loading & saving
 
 displayIOError :: E.IOException -> String
 displayIOError e = "Error: " ++ E.displayException e
@@ -153,11 +153,15 @@ paragraphWidget uiState =
         | uiState^.focusedL == PAR = focusedBorderAttr
         | otherwise = unFocusedBorderAttr
       parBorder = withAttr attr (hBorderWithLabel (str "[Paragraph]"))
-      inits = sentenceWidget $ P.toText $
+      inits = withAttr unFocusedParagraphAttr $ sentenceWidget $ P.toText $
         uiState^.editorsL.to (Z.toList . init)^..each._1.SE.sentenceL
-      sentence = padTopBottom 1 $
-        maybe emptyWidget SE.editorWidget $ uiState^?sentenceL
-      tails = sentenceWidget $ P.toText $
+      sentence =
+        let go widget
+              | uiState^.focusedL == PAR = widget
+              | otherwise = withAttr unFocusedParagraphAttr widget
+        in go $ padTopBottom 1 $
+           maybe emptyWidget SE.editorWidget $ uiState^?sentenceL
+      tails = withAttr unFocusedParagraphAttr $ sentenceWidget $ P.toText $
         uiState^.editorsL.to (Z.toList . tail)^..each._1.SE.sentenceL
   in parBorder <=> inits <=> sentence <=> tails
 
@@ -297,6 +301,9 @@ focusedBorderAttr = "focused-border"
 unFocusedBorderAttr :: AttrName
 unFocusedBorderAttr = "unfocused-border"
 
+unFocusedParagraphAttr :: AttrName
+unFocusedParagraphAttr = "unfocused-paragraph"
+
 app :: App UIState () Name
 app = App {
   appDraw = pure . allWidgets,
@@ -306,6 +313,8 @@ app = App {
   appAttrMap =
       let gray = Vty.rgbColor (20 :: Int) 20 20
           attrs = [
+            (unFocusedParagraphAttr,
+              fg gray),
             (ID.focusedAttr <> ID.lineAttr,
               Vty.defAttr `Vty.withStyle` Vty.standout),
             (ID.unFocusedAttr,
