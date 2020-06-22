@@ -1,7 +1,4 @@
-packages:
-  latin-engine-core/*.cabal,
-  latin-engine-interactive/*.cabal,
-  latin-engine-diagrams/*.cabal
+packages: */*.cabal
 
 package diagrams
   flags: rasterific
