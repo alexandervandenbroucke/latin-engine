@@ -22,10 +22,12 @@ module Data.Forest (
   -- * Data Types
   Status(Root,Child,Clear),
   Forest,
+  -- * Queries
   statusOf,
   roots,
   children,
   descendents,
+  nonClear,
   -- * Creating and Modifying
   emptyForest,
   setRoot,

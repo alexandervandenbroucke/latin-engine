@@ -11,6 +11,8 @@ Internally, a 'Forest' of parse trees is represented as a map indexed by
 
 -}
 
+{-# LANGUAGE DeriveGeneric #-}
+
 module Data.Forest.Internal
   (
     -- * Data Types
@@ -24,6 +26,7 @@ module Data.Forest.Internal
     roots,
     children,
     descendents,
+    nonClear,
     -- * Creating and modifying
     emptyForest,
     setRoot,
@@ -36,12 +39,13 @@ where
 import qualified Data.IntMap as M
 import qualified Data.IntSet as S
 import           Data.Sentence (WordId)
+import           GHC.Generics
 
 -- | The external status of a word in the parse-tree forest.
 --
 -- A word is either 'Clear' (no status has been set), a 'Root' of a parse tree
 -- in the forest, or a 'Child' of some other word.
-data Status = Clear | Root | Child !WordId deriving (Eq,Ord,Show,Read)
+data Status = Clear | Root | Child !WordId deriving (Eq,Ord,Show,Read,Generic)
 
 -- | The internal status of a word. This is the data type that is stored in
 -- the map. Unlike 'Status', there is no explicit representation of 'Clear'.
@@ -123,3 +127,7 @@ descendents root forest = go (S.singleton root) where
   go s =
     let s' = S.unions [children w forest | w <- S.elems s]
     in if s == s' then s else go s'
+
+-- | Get all the wordIds that are not clear
+nonClear :: Forest -> WordIdSet
+nonClear (Forest forest) = S.fromList (M.keys forest)
