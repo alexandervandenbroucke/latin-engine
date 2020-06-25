@@ -41,7 +41,6 @@ module Data.Forest (
   )
 where
 
-import           Control.Monad ((>=>))
 import           Data.Forest.Internal
 import qualified Data.IntMap as M
 import qualified Data.Text as T
@@ -58,8 +57,8 @@ deserialise = fmap (Forest . M.fromList) . readMaybe . T.unpack
 
 -- | Serialise a list of forests to a 'T.Text'.
 serialiseForests :: [Forest] -> T.Text
-serialiseForests = T.pack . show . map serialise
+serialiseForests = T.pack . show
 
 -- | Deserialise a list of forests to a 'T.Text'.
 deserialiseForests :: T.Text -> Maybe [Forest]
-deserialiseForests = readMaybe . T.unpack >=> mapM deserialise
+deserialiseForests = readMaybe . T.unpack
