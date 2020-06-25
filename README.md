@@ -19,6 +19,9 @@ gender and number and its grammatical function.
 3. `latin-engine-diagrams`: Uses the `diagrams` package to render a parse-tree
 forest to pdf, using colourful arcs to show the sentence structure.
 
+4. `latin-engine-json`: JSON serialisation. This provides a Haskell-independent
+serialisation format for parse-tree forests and annotations.
+
 
 Build Instructions
 ------------------
