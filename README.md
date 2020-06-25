@@ -2,7 +2,7 @@ Latin Engine
 ============
 
 A library and command line applictions to assist with the translation of Latin
-texts. There are four packages to this project:
+texts. There are packages to this project:
 
 1. `latin-engine-core`: This package implements the core data structures for
 working with the source texts: a parse-tree forest, parsing paragraphs into
@@ -19,16 +19,14 @@ gender and number and its grammatical function.
 3. `latin-engine-diagrams`: Uses the `diagrams` package to render a parse-tree
 forest to pdf, using colourful arcs to show the sentence structure.
 
-4. `latin-engine-json`: experimental JSON serialisation. Very work in progress.
 
-
-Build instructions
+Build Instructions
 ------------------
 
-Using `cabal`.
+Use `cabal build`.
 
-Using the interactive mode
---------------------------
+Using the `interactive` Mode
+----------------------------
 
 To begin, you'll need a piece of latin source text, e.g., from
 https://thelatinlibrary.com/. Store a piece of plain text you want to
@@ -68,8 +66,8 @@ file. Saved forests and annotations are loaded automatically when you open
 the program.
 
 
-Using the render applications
------------------------------
+Using the `render` Application
+------------------------------
 
 You can render a representation of the parse-tree forest to PDF using the
 `render` command, e.g.,
