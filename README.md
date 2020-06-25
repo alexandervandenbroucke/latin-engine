@@ -46,8 +46,8 @@ $ interactive latin/DBG/Caesar_DBG_1.txt
 ```
 
 You should then see the text displayed in the upper window, with the first
-sentence having focus. Below each word is the words identifier, a number.
-Next to this number, application will render the word's status (position in
+sentence having focus. Below each word is the word's identifier, a number.
+Next to this number the application renders the word's status (position in
 the parse tree), which is either empty, `R` for a parse tree root or `C`
 followed by a number indicating that the word is the child of some other word.
 
