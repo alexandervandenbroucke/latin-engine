@@ -52,11 +52,17 @@ safeCursorL = lens Z.safeCursor setter where
   setter z Nothing  = Z.delete z
   setter z (Just x) = Z.insert x (Z.delete z)
 
+senL :: Lens' Editors SE.Editor
+senL = _1
+
+annL :: Lens' Editors (ID.Editor [T.Text])
+annL = _2
+
 sentenceL :: Traversal' UIState SE.Editor
-sentenceL = editorL._Just._1
+sentenceL = editorL._Just.senL
 
 annotationL :: Traversal' UIState (ID.Editor [T.Text])
-annotationL = editorL._Just._2
+annotationL = editorL._Just.annL
 
 minibufferL
   :: Lens' UIState (MB.MiniBuffer Name (UIState -> UIState))
@@ -124,8 +130,8 @@ saveEditors filePath uiState  = do
   let saveForests = T.writeFile (filePath -<.> "fst") . F.serialiseForests
       saveAnnotations =
         T.writeFile (filePath -<.> "ann") . T.unlines . map ID.serialise
-  saveForests (uiState^.editorsL.to Z.toList^..each._1.SE.forestL)
-  saveAnnotations (uiState^.editorsL.to Z.toList^..each._2)
+  saveForests (uiState^.editorsL.to Z.toList^..each.senL.SE.forestL)
+  saveAnnotations (uiState^.editorsL.to Z.toList^..each.annL)
 
 
 -- | Return all elements in the zipper to the left of the cursor
@@ -154,7 +160,7 @@ paragraphWidget uiState =
         | otherwise = unFocusedBorderAttr
       parBorder = withAttr attr (hBorderWithLabel (str "[Paragraph]"))
       inits = withAttr unFocusedParagraphAttr $ sentenceWidget $ P.toText $
-        uiState^.editorsL.to (Z.toList . init)^..each._1.SE.sentenceL
+        uiState^.editorsL.to (Z.toList . init)^..each.senL.SE.sentenceL
       sentence =
         let go widget
               | uiState^.focusedL == PAR = widget
@@ -162,7 +168,7 @@ paragraphWidget uiState =
         in go $ padTopBottom 1 $
            maybe emptyWidget SE.editorWidget $ uiState^?sentenceL
       tails = withAttr unFocusedParagraphAttr $ sentenceWidget $ P.toText $
-        uiState^.editorsL.to (Z.toList . tail)^..each._1.SE.sentenceL
+        uiState^.editorsL.to (Z.toList . tail)^..each.senL.SE.sentenceL
   in parBorder <=> inits <=> sentence <=> tails
 
 annotationWidget :: UIState -> Widget Name
@@ -208,6 +214,25 @@ updateMiniBuffer
   :: UIState -> MB.MiniBuffer Name (UIState -> UIState) -> UIState
 updateMiniBuffer uiState (MB.Return f)  = f uiState
 updateMiniBuffer uiState mb = uiState & minibufferL .~ mb
+
+-- | Display the annotation prompt
+handleAnnotation
+  :: S.WordId -> Editors -> MB.MiniBuffer Name Editors
+handleAnnotation n editors = do
+  w <- safeWordNr n (editors^.senL.SE.sentenceL)
+  let wStr = T.unpack (S.wordText w)
+  let msg = "annotate " ++ wStr ++ " [" ++ show n ++ "] (C-g to cancel): "
+  let promptForAnnotation
+        | Just [_,ann] <- editors^.annL.ID.valueL n =
+            MB.promptPrimitive MB (const True) msg (T.unpack ann)
+        | otherwise =
+            MB.promptString MB msg
+  annotation <- promptForAnnotation
+  case annotation of
+    "" -> MB.message "Error: empty annotation." >> MB.abort
+    _  -> return $
+          editors & annL.ID.valueL n .~ Just [S.wordText w,T.pack annotation]
+
 
 handleEvent :: UIState -> BrickEvent Name () -> EventM Name (Next UIState)
 handleEvent uiState (AppEvent ()) =
@@ -263,51 +288,34 @@ handleEditorEvent
 handleEditorEvent editors uiState c
   | 'r' <- c = do
       root <- MB.promptNatural MB "root (C-g to cancel): "
-      _ <- safeWordNr root (editors^._1.SE.sentenceL)
-      return (editors & _1.SE.forestL %~ F.setRoot root)
+      _ <- safeWordNr root (editors^.senL.SE.sentenceL)
+      return (editors & senL.SE.forestL %~ F.setRoot root)
   | 'c' <- c = do
       child <- MB.promptNatural MB "child (C-g to cancel): "
-      _ <- safeWordNr child (editors^._1.SE.sentenceL)
+      _ <- safeWordNr child (editors^.senL.SE.sentenceL)
       parent <- MB.promptNatural MB $
         "child  " ++ show child ++ " of (C-g to cancel): "
-      _ <- safeWordNr parent (editors^._1.SE.sentenceL)
-      return (editors & _1.SE.forestL %~ F.addChild child parent)
+      _ <- safeWordNr parent (editors^.senL.SE.sentenceL)
+      return (editors & senL.SE.forestL %~ F.addChild child parent)
   | 'e' <- c = do
       n <- MB.promptNatural MB "erase (C-g to cancel): "
-      _ <- safeWordNr n (editors^._1.SE.sentenceL)
-      return (editors & _1.SE.forestL %~ F.clear n)
+      _ <- safeWordNr n (editors^.senL.SE.sentenceL)
+      return (editors & senL.SE.forestL %~ F.clear n)
   | 'a' <- c, ANN <- uiState^.focusedL,
-    n <- editors^._2.ID.focusL,
-    Just w <- S.wordNr n (editors^._1.SE.sentenceL),
-    Just [_,ann] <- editors^._2.ID.valueL n = do
-      let msg = "annotate " ++ show n ++ " (C-g to cancel): "            
-      annotation <- MB.promptPrimitive MB (const True) msg (T.unpack ann)
-      case annotation of
-        "" -> MB.message "Error: empty annotation." >> MB.abort
-        _  -> return $
-          editors & _2.ID.valueL n .~ Just [S.wordText w,T.pack annotation]
+    n <- editors^.annL.ID.focusL,
+    Just{} <- S.wordNr n (editors^.senL.SE.sentenceL) =
+      handleAnnotation n editors
   | 'a' <- c = do
       n <- MB.promptNatural MB "annotate (C-g to cancel): "
-      w <- safeWordNr n (editors^._1.SE.sentenceL)
-      let promptForAnnotation
-            | Just [_,ann] <- editors^._2.ID.valueL n =
-                MB.promptPrimitive MB (const True) msg (T.unpack ann)
-            | otherwise =
-                MB.promptString MB msg
-            where msg = "annotate " ++ show n ++ " (C-g to cancel): "
-      annotation <- promptForAnnotation
-      case annotation of
-        "" -> MB.message "Error: empty annotation." >> MB.abort
-        _  -> return $
-          editors & _2.ID.valueL n .~ Just [S.wordText w,T.pack annotation]
+      handleAnnotation n editors
   | 'u' <- c, ANN <- uiState^.focusedL = do
-      return (editors & _2.ID.valueL (editors^._2.ID.focusL) .~ Nothing)
+      return (editors & annL.ID.valueL (editors^.annL.ID.focusL) .~ Nothing)
   | 'u' <- c = do
       n <- MB.promptNatural MB "unannotate (C-g to cancel): "
-      _ <- safeWordNr n (editors^._1.SE.sentenceL)
-      case editors^._2.ID.valueL n of
+      _ <- safeWordNr n (editors^.senL.SE.sentenceL)
+      case editors^.annL.ID.valueL n of
         Nothing -> MB.message "Error: no such annotation." >> MB.abort
-        Just{} -> return (editors & _2.ID.valueL n .~ Nothing)
+        Just{} -> return (editors & annL.ID.valueL n .~ Nothing)
   | otherwise = MB.abort
 
 focusedBorderAttr :: AttrName
