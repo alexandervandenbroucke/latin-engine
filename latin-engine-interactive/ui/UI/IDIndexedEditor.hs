@@ -84,22 +84,6 @@ lookupL n = lens (M.lookup n) setter where
 valueL :: WordId -> Lens' (Editor a) (Maybe a)
 valueL wordId = valuesL.lookupL wordId
 
--- | The prefix attribute of this widget
-editAttr :: AttrName
-editAttr = "id-indexed-editor"
-
--- | The attribute prefix when the editor has focus.
-focusedAttr :: AttrName
-focusedAttr = editAttr <> "focused"
-
--- | The attribute prefix when the editor does not have focus.
-unFocusedAttr :: AttrName
-unFocusedAttr = editAttr <> "unfocused"
-
--- | The attribute of the selected line
-lineAttr :: AttrName
-lineAttr = "line"
-
 -- | Move the focused value to the next 'WordId' that has an annotation.
 next :: Editor a -> Editor a
 next editor = case M.lookupGT (editor^.focusL) (editor^.valuesL) of
@@ -125,6 +109,23 @@ dropColumn editor = editor & valuesL %~ M.map (drop 1)
 addColumn :: (WordId -> [a] -> a) -> Editor [a] -> Editor [a]
 addColumn newColumn editor =
   editor & valuesL %~ M.mapWithKey (\k xs -> newColumn k xs:xs)
+
+-- | The prefix attribute of this widget
+editAttr :: AttrName
+editAttr = "id-indexed-editor"
+
+-- | The attribute prefix when the editor has focus.
+focusedAttr :: AttrName
+focusedAttr = editAttr <> "focused"
+
+-- | The attribute prefix when the editor does not have focus.
+unFocusedAttr :: AttrName
+unFocusedAttr = editAttr <> "unfocused"
+
+-- | The attribute of the selected line
+lineAttr :: AttrName
+lineAttr = "line"
+
 
 -- | A widget for a focused 'Editor' that has annotations that can be show
 -- as a 'String'.
@@ -196,6 +197,9 @@ instance SerialiseS.FromWordIdMap (Editor a) where
   type Src (Editor a) = a
   fromWordIdMap m = setv <$> fromWordIdMap m where
     setv v = empty & valuesL .~ v
+
+{-# DEPRECATED serialise, deserialise
+    "Use package latin-engine-json instead" #-}
 
 -- | Serialise an 'Editor'
 serialise :: Show a => Editor a -> T.Text

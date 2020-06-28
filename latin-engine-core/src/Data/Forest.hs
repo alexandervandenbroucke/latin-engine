@@ -47,6 +47,9 @@ import qualified Data.Text as T
 import           Prelude hiding (Word)
 import           Text.Read (readMaybe)
 
+{-# DEPRECATED serialise, deserialise, serialiseForests, deserialiseForests
+    ["use latin-engine-json package instead"] #-}
+
 -- | Serialise a 'Forest' to a 'T.Text'.
 serialise :: Forest -> T.Text
 serialise (Forest forest) = T.pack $ show $ M.toList forest
