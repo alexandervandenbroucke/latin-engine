@@ -12,6 +12,7 @@ Internally, a 'Forest' of parse trees is represented as a map indexed by
 -}
 
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Data.Forest.Internal
   (
@@ -65,7 +66,9 @@ inject IRoot = Root
 inject (IChild wordId) = Child wordId
 
 -- | A Forest of parse trees.
-newtype Forest = Forest (M.IntMap InternalStatus) deriving (Show,Read,Eq,Ord)
+newtype Forest = Forest (M.IntMap InternalStatus)
+  deriving (Show,Read,Eq,Ord,Semigroup,Monoid)
+
 
 -- The forest is represented bottom-up: children point to their parents.
 --
