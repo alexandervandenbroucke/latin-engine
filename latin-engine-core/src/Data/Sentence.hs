@@ -18,8 +18,8 @@ module Data.Sentence (
   Word(..),
   Sentence(..),
   Data.Sentence.null,
-  makeSentence,
-  words, wordCount, sentenceText, wordNr,
+  makeSentence, fromWords,
+  toWords, wordCount, sentenceText, wordNr,
   splitLines, splitSentence
 )
 where
@@ -55,10 +55,15 @@ makeSentence text = Sentence (A.listArray (1,n) ws) where
   ws = zipWith Word [1..] (T.words (removeTrailingFullStops text))
   n = length ws
 
+-- | Create a sentence from a list of words.
+fromWords :: [T.Text] -> Sentence
+fromWords ws = Sentence (A.listArray (1,n) words) where
+  words = zipWith Word [1..] ws
+  n = length ws
+
 removeTrailingFullStops :: T.Text -> T.Text
 removeTrailingFullStops = go where
   go sentence = maybe sentence go (T.stripSuffix (T.pack ".") sentence)
-
 
 -- | The number of words in this sentence.
 wordCount :: Sentence -> Int
@@ -73,8 +78,8 @@ wordNr i (Sentence arr)
 
 -- | Return a list of all the words in the sentence, ordered ascendingly by
 -- their 'WordId'.
-words :: Sentence -> [Word]
-words = A.elems . unSentence
+toWords :: Sentence -> [Word]
+toWords = A.elems . unSentence
 
 -- | Turn a sentence into a 'T.Text' by concatenating all words with spaces in
 -- between.
@@ -105,4 +110,4 @@ splitLines width len = go 0 [] where
 
 -- | Split a sentence into lines of at most 80 columns.
 splitSentence :: Sentence -> [[Word]]
-splitSentence = splitLines 80 (T.length . wordText) . words
+splitSentence = splitLines 80 (T.length . wordText) . toWords

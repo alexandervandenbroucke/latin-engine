@@ -62,7 +62,7 @@ editorWidget (Editor sentence forest) =
       pairs :: [(T.Text,T.Text)]
       pairs =
         [(text,statusText word forest)
-        | word@(S.Word _ text) <- S.words sentence ]
+        | word@(S.Word _ text) <- S.toWords sentence ]
       width = ctx^.availWidthL
       splitted = S.splitLines width len pairs
       renderPair (text,status) = padRight (Pad 1) (txt text <=> txt status)

@@ -126,7 +126,7 @@ childMarkers
   -> D.QDiagram R.B D.V2 Float Any
 childMarkers colourMap forest sentence d =
   let statusOf word = (n,forest `F.statusOf` n) where n = S.wordId word
-      children = [(w,p) | (w,F.Child p) <- map statusOf (S.words sentence)]
+      children = [(w,p) | (w,F.Child p) <- map statusOf (S.toWords sentence)]
       attach (c,p) = D.withNames [c,p] $ \[cDiagram, pDiagram] ->
         -- the evenness of the root determines if an arc is drawn on top
         -- or below.
