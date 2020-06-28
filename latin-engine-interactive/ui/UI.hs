@@ -17,6 +17,7 @@ import           Prelude hiding (init,tail)
 import           System.FilePath ((-<.>))
 
 import qualified Data.Forest as F
+import qualified Data.Forest.Serialise as SerialiseF
 import qualified Data.Sentence as S
 import qualified Data.Paragraph as P
 import           Lens.Micro
@@ -88,10 +89,11 @@ loadParagraph filePath = do
 
 loadForests :: (MonadIO m, MonadError String m) => FilePath -> m [F.Forest]
 loadForests filePath = do
-  fileData <- liftIO (E.try $ T.readFile filePath) >>=
+  fileData <- liftIO (E.try $ SerialiseF.readForests filePath) >>=
     either (throwError . displayIOError) return
-  maybe (throwError $ "Warning: invalid forest file: " ++ filePath) return $
-    F.deserialiseForests fileData
+  case fileData of
+    Nothing      -> throwError ("Warning: invalid forest file: " ++ filePath)
+    Just forests -> return forests
 
 loadAnnotations
   :: (MonadIO m, MonadError String m) => FilePath -> m [ID.Editor [T.Text]]
@@ -105,7 +107,7 @@ loadEditors :: FilePath -> IO UIState
 loadEditors filePath = do
   let ExceptT go = W.runWriterT $ do
         paragraph <- loadParagraph filePath
-        forests <- loadForests (filePath -<.> "fst") `catchError` \e -> do
+        forests <- loadForests (filePath -<.> "fst.json") `catchError` \e ->
           W.tell [e] >> return (repeat F.emptyForest)
         annotations <- loadAnnotations (filePath -<.> "ann") `catchError` \e -> 
           W.tell [e] >> return (repeat ID.empty)
@@ -127,7 +129,7 @@ loadEditors filePath = do
 
 saveEditors :: FilePath -> UIState -> IO ()
 saveEditors filePath uiState  = do
-  let saveForests = T.writeFile (filePath -<.> "fst") . F.serialiseForests
+  let saveForests = SerialiseF.writeForests (filePath -<.> "fst.json")
       saveAnnotations =
         T.writeFile (filePath -<.> "ann") . T.unlines . map ID.serialise
   saveForests (uiState^.editorsL.to Z.toList^..each.senL.SE.forestL)

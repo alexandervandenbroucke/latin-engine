@@ -26,6 +26,7 @@ executable interactive
   -- other-extensions:
   build-depends:       base ^>=4.11.1.0,
                        latin-engine-core,
+                       latin-engine-json,
                        text ^>=1.2.3.1,
                        vty ^>= 5.28.2,
                        brick ^>= 0.52.1,

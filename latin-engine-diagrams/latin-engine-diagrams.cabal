@@ -35,6 +35,7 @@ executable render
   build-depends:       base ^>=4.11.1.0,
                        latin-engine-core,
                        latin-engine-diagrams,
+                       latin-engine-json,
                        text ^>=1.2.3.1,
                        ListZipper ^>= 1.2.0.2,
                        diagrams-core ^>= 1.4,

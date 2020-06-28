@@ -1,11 +1,10 @@
-import qualified Data.Forest as F
+import qualified Data.Forest.Serialise as F
 import qualified Data.Paragraph as P
-import qualified Data.Text.IO as T
 import qualified Diagrams.Backend.Rasterific as R
 import           Diagrams.LatinEngine (sentencesDiagram)
 import qualified Diagrams.Prelude as D
 import           System.Environment (getProgName,getArgs)
-import           System.FilePath (FilePath, (-<.>))
+import           System.FilePath ((-<.>))
 
 main :: IO ()
 main = do
@@ -15,15 +14,13 @@ main = do
     [] -> putStrLn ("usage: " ++ progName ++ " filename")
     (filePath:_) -> do
       sentences <- P.readFile filePath
-      Just forests <- readForests (filePath -<.> "fst")
+      Just forests <- F.readForests (filePath -<.> "fst.json")
       let diagram =
             sentencesDiagram D.def sentences forests
           width  = D.width diagram
           height = D.height diagram      
       R.renderRasterific (filePath -<.> "pdf") (D.dims2D width height) diagram
 
-readForests :: FilePath -> IO (Maybe [F.Forest])
-readForests filePath = F.deserialiseForests <$> T.readFile filePath
 
 -- Local Variables:
 -- dante-target: "render"
