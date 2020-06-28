@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE RankNTypes #-}
 
 module UI (app,initState,loadEditors) where
 
@@ -11,19 +12,19 @@ import           Control.Monad.Except
 import qualified Control.Monad.Writer as W
 import qualified Data.List.Zipper as Z
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
 import qualified Graphics.Vty as Vty
 import           Prelude hiding (init,tail)
 import           System.FilePath ((-<.>))
 
 import qualified Data.Forest as F
 import qualified Data.Forest.Serialise as SerialiseF
-import qualified Data.Sentence as S
 import qualified Data.Paragraph as P
+import qualified Data.Sentence as S
+import           Data.Sentence.Serialise as SerialiseS
 import           Lens.Micro
-import qualified UI.SentenceEditor as SE
-import qualified UI.MiniBuffer as MB
 import qualified UI.IDIndexedEditor as ID
+import qualified UI.MiniBuffer as MB
+import qualified UI.SentenceEditor as SE
 
 data Name = MB | PAR | ANN deriving (Eq,Ord,Show)
 
@@ -82,45 +83,62 @@ initState :: FilePath -> UIState
 initState filePath = UIState filePath Z.empty MB.abort PAR where
 
 loadParagraph :: (MonadIO m, MonadError String m) => FilePath -> m [SE.Editor]
-loadParagraph filePath = do
-  paragraph <- liftIO (E.try $ P.readFile filePath) >>=
-    either (throwError . displayIOError) return
-  return $ map SE.makeEmptyEditor paragraph
+loadParagraph filePath =
+  liftIO (E.try $ P.readFile filePath) >>=
+  either (throwError . displayIOError) (return . map SE.makeEmptyEditor)
 
 loadForests :: (MonadIO m, MonadError String m) => FilePath -> m [F.Forest]
-loadForests filePath = do
-  fileData <- liftIO (E.try $ SerialiseF.readForests filePath) >>=
-    either (throwError . displayIOError) return
-  case fileData of
-    Nothing      -> throwError ("Warning: invalid forest file: " ++ filePath)
-    Just forests -> return forests
+loadForests filePath =
+  liftIO (E.try $ SerialiseF.readForests filePath) >>=
+  either (throwError . displayIOError) return      >>=
+  maybe (throwError $ "Warning: invalid forest file: " ++ filePath) return
 
 loadAnnotations
-  :: (MonadIO m, MonadError String m) => FilePath -> m [ID.Editor [T.Text]]
-loadAnnotations filePath = do
-  annotations <- liftIO (E.try $ T.readFile filePath) >>=
-    either (throwError . displayIOError) return
-  maybe (throwError $ "Warning: invalid annotation file: " ++ filePath) return $
-    mapM ID.deserialise (T.lines annotations)
+  :: (MonadIO m, MonadError String m)
+  => P.Paragraph -> FilePath -> m [ID.Editor [T.Text]]
+loadAnnotations paragraph filePath = do
+  annotations <-
+    liftIO (E.try $ SerialiseS.readFile filePath) >>=
+    either (throwError . displayIOError) return   >>=
+    maybe  (throwError $ "Warning: malformed file: " ++ filePath) return
+  let withWords sentence editor =
+        let addWord n _ = case S.wordNr n sentence of
+              Nothing -> throwError $
+                "Warning: invalid annotation file: " ++ filePath
+              Just w -> return (S.wordText w)
+        in editor
+           & fmap (map return)    -- Editor [m Text]
+           & ID.addColumn addWord -- Editor [m Text]
+           & fmap sequence        -- Editor (m [Text])
+           & sequence             -- m (Editor [Text])
+           -- This complicated sequencing is necessary to thread exceptions
+           -- through the ID.Editor structure. Perhaps it would be easier to
+           -- simply pre-process all the keys in the Editor, and throw
+           -- exceptions early, before updating the editor structure.
+           -- Though, this way the module UI does not depend directly on
+           -- IntMap.
+  zipWithM withWords paragraph annotations
 
 loadEditors :: FilePath -> IO UIState
 loadEditors filePath = do
-  let ExceptT go = W.runWriterT $ do
-        paragraph <- loadParagraph filePath
-        forests <- loadForests (filePath -<.> "fst.json") `catchError` \e ->
-          W.tell [e] >> return (repeat F.emptyForest)
-        annotations <- loadAnnotations (filePath -<.> "ann") `catchError` \e -> 
-          W.tell [e] >> return (repeat ID.empty)
-        let makeEditors se f ann = (se & SE.forestL .~ f, ann)
-        initState filePath
-          & editorsL .~ Z.fromList (zipWith3 makeEditors paragraph forests annotations)
-          & return
-  eUIState <- go
+  eUIState <- runExceptT $ W.runWriterT $ do
+    sentences <- loadParagraph filePath
+    let paragraph = sentences^..each.SE.sentenceL
+
+    forests <- loadForests (filePath -<.> "fst.json")
+      `catchError` \e -> W.tell [e] >> return (repeat F.emptyForest)
+
+    annotations <- loadAnnotations paragraph (filePath -<.> "ann.json")
+      `catchError` \e -> W.tell [e] >> return (repeat ID.empty)
+
+    let editors = zipWith3 makeEditors sentences forests annotations where
+          makeEditors se f ann = (se & SE.forestL .~ f, ann)
+
+    return (initState filePath & editorsL .~ Z.fromList editors)
   return $ case eUIState of
     Left e ->
-      let mb  = MB.message e >> MB.abort
-      in initState filePath & minibufferL .~ mb
-    Right (uiState,warnings) ->
+      initState filePath & minibufferL .~ (MB.message e >> MB.abort)
+    Right (uiState, warnings) ->
       let minibuffer
             | null warnings = MB.message ("Loaded " ++ filePath) >> MB.abort
             | otherwise = mapM MB.message warnings >> MB.abort
@@ -129,11 +147,10 @@ loadEditors filePath = do
 
 saveEditors :: FilePath -> UIState -> IO ()
 saveEditors filePath uiState  = do
-  let saveForests = SerialiseF.writeForests (filePath -<.> "fst.json")
-      saveAnnotations =
-        T.writeFile (filePath -<.> "ann") . T.unlines . map ID.serialise
-  saveForests (uiState^.editorsL.to Z.toList^..each.senL.SE.forestL)
-  saveAnnotations (uiState^.editorsL.to Z.toList^..each.annL)
+  SerialiseF.writeForests (filePath -<.> "fst.json") $
+    uiState^.editorsL.to Z.toList^..each.senL.SE.forestL
+  SerialiseS.writeFile (filePath -<.> "ann.json") $
+    uiState^.editorsL.to Z.toList^..each.annL.to ID.dropColumn
 
 
 -- | Return all elements in the zipper to the left of the cursor
@@ -233,7 +250,7 @@ handleAnnotation n editors = do
   case annotation of
     "" -> MB.message "Error: empty annotation." >> MB.abort
     _  -> return $
-          editors & annL.ID.valueL n .~ Just [S.wordText w,T.pack annotation]
+          editors & annL.ID.valueL n ?~ [S.wordText w,T.pack annotation]
 
 
 handleEvent :: UIState -> BrickEvent Name () -> EventM Name (Next UIState)
@@ -278,7 +295,7 @@ handleEvent uiState (VtyEvent (Vty.EvKey (Vty.KChar c) []))
   | Just editors <- uiState^.editorL
   = continue $ updateMiniBuffer uiState $ do
       editors' <- handleEditorEvent editors uiState c
-      return (\s -> s & editorL .~ Just editors' & minibufferL .~ MB.abort)
+      return (\s -> s & editorL ?~ editors' & minibufferL .~ MB.abort)
 
 handleEvent uiState _evt = continue uiState
 
