@@ -13,7 +13,7 @@ user: a minibuffer can be one of four things:
 
 1. @'Return' x@: the script has completed, with a result @x@.
 
-2. 'Abort': the script has completed, with a failure
+2. 'Done': no script has been run, or the script has run to completion.
 
 3. @'Message' msg mb@: the script is currently displaying a message @msg@,
    after the message has been acknowledged, the script moves to a new state
@@ -56,7 +56,7 @@ can be created with 'promptPrimitive'.
 module UI.MiniBuffer (
   -- * Data Type
   MiniBuffer(..),
-  hasAborted,
+  isDone,
   -- * Smart constructors
   abort,
   message,
@@ -83,7 +83,7 @@ data MiniBuffer n a
   = Return a
   | Message String (MiniBuffer n a)
   | Prompt (Char -> Bool) (MBEditor n) String (String -> MiniBuffer n a)
-  | Abort
+  | Done
   deriving Functor
 
 instance Applicative (MiniBuffer n) where
@@ -95,7 +95,7 @@ instance Monad (MiniBuffer n) where
   Return a >>= f = f a
   Prompt fil editor msg k >>= f = Prompt fil editor msg (\x -> k x >>= f)
   Message msg k >>= f = Message msg (k >>= f)
-  Abort >>= _ = Abort
+  Done >>= _ = Done
 
 
 -- | Create a minibuffer displaying a single text message, returning @()@.
@@ -152,13 +152,15 @@ promptPrimitive name accept msg initial = Prompt accept e msg return where
   e = E.editorText name (Just 1) (T.pack initial)
 
 -- | Abort the current minibuffer.
+--
+-- Sets the minibuffer to 'Done'.
 abort :: MiniBuffer n a
-abort = Abort
+abort = Done
 
--- | Return true if the minibuffer has aborted
-hasAborted :: MiniBuffer n a -> Bool
-hasAborted Abort = True
-hasAborted _     = False
+-- | Return true if the minibuffer has completed.
+isDone :: MiniBuffer n a -> Bool
+isDone Done = True
+isDone _     = False
 
 -- | Render the minibuffer.
 miniBufferWidget :: (Show n, Ord n) => MiniBuffer n a -> Widget n
@@ -166,7 +168,7 @@ miniBufferWidget (Return _) = emptyWidget
 miniBufferWidget (Message msg _) = strWrap msg
 miniBufferWidget (Prompt _ e msg _) =
   str msg <+> E.renderEditor (txt . mconcat) True e
-miniBufferWidget Abort = emptyWidget
+miniBufferWidget Done = emptyWidget
 
 -- | Handle input events for the minibuffer.
 --

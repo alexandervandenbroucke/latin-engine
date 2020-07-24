@@ -214,7 +214,7 @@ allWidgets uiState =
   <=>
   hBorder
   <=>
-  (if MB.hasAborted (uiState^.minibufferL) then
+  (if MB.isDone (uiState^.minibufferL) then
      str "R)oot C)hild E)rase S)ave F)ocus A)nnotate U)nannotate Q)uit"
     else
      MB.miniBufferWidget (uiState^.minibufferL))
@@ -271,7 +271,7 @@ handleEvent uiState (VtyEvent (Vty.EvKey Vty.KDown []))
   | otherwise = continue uiState
 
 handleEvent uiState evt
-  | mb <- uiState^.minibufferL, not (MB.hasAborted mb) = do
+  | mb <- uiState^.minibufferL, not (MB.isDone mb) = do
       MB.handleMiniBufferEvent mb evt >>= continue . updateMiniBuffer uiState
 
 handleEvent uiState (VtyEvent (Vty.EvKey (Vty.KChar c) []))
