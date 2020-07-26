@@ -26,7 +26,8 @@ library
                        diagrams-core ^>= 1.4,
                        diagrams-lib ^>= 1.4,
                        diagrams-rasterific ^>= 1.4,
-                       microlens ^>= 0.4.11
+                       microlens ^>= 0.4.11,
+                       containers ^>= 0.6.2                       
 
 executable render
   main-is:             Renderer.hs
@@ -37,7 +38,6 @@ executable render
                        latin-engine-diagrams,
                        latin-engine-json,
                        text ^>=1.2.3.1,
-                       ListZipper ^>= 1.2.0.2,
                        diagrams-core ^>= 1.4,
                        diagrams-lib ^>= 1.4,
                        diagrams-rasterific ^>= 1.4,
