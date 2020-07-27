@@ -7,6 +7,23 @@ Maintainer:  alexander.vandenbroucke@gmail.com
 This module implements an algorithm for breaking sentences into lines, while
 minimising the amount of line breaks inside subclauses of a sentence.
 It is based on the Knuth-Plass algorithm.
+
+The goal of a line breaking algorithm is to choose a sequence of locations
+where to break a sentence into lines. Each line has an associated 'badness'.
+The badness indicates how far the line's actual length is from the desired line
+length. Lines that exceed a certain treshold of badness are rejected.
+
+Moreover, a line also has a 'demerit'. A line gains demerits by having arcs 
+in or out of later lines (i.e. it has words whose parent or children are
+beyond the break at the end of the current line).
+The badness of a line also weighs on the demerits to some extend.
+
+The Knuth-Plass algorithm uses dynamic programming to compute the sequence of
+breakpoints that minimises the total demerits.
+It does this in worst-case quadratic time, but is mostly linear in practice.
+However, the implementation in this module is not optimised, and it is likely
+that a significant reduction in the constant factors could be achieved.
+
 -}
 
 module Diagrams.LineBreaking where
@@ -20,19 +37,10 @@ import qualified Data.Sentence as S
 import qualified Data.Forest as F
 
 
--- L = desired length = 75
--- badness of a line = abs(#character count - L)
--- badness tolerance <= 5
--- demerits of a line = # of arcs outbound to or inbound from a word in
--- another, later line
--- l = line demerit (inherent demerit caused by a line break, that must be
--- offset by making a good choice)
--- should demerits include badness? Probably, yes.
-
 -- | A line, given a start (inclusive) and end point (exclusive).
 data Line = Line !S.WordId !S.WordId
 
--- | The character count of a sentence
+-- | The character count of a 'Line'.
 len :: S.Sentence -> Line -> Int
 len sentence (Line start end) = maybe 0 finalise (traverse go [start..(end-1)])
   where
@@ -40,17 +48,21 @@ len sentence (Line start end) = maybe 0 finalise (traverse go [start..(end-1)])
     spaces = end - start
     go w = fmap (T.length . S.wordText) (S.wordNr w sentence)
 
--- | Badness given a desired length
-badness :: S.Sentence -> Int -> Line -> Int
-badness sentence desired line = desired - len sentence line
+-- | Badness of a 'Line' given a desired length.
+sentenceBadness
+  :: S.Sentence -- ^ the 'S.Sentence' that the 'Line' is a part of
+  -> Int        -- ^ the desired length
+  -> Line       -- ^ the line
+  -> Int
+sentenceBadness sentence desired line = desired - len sentence line
 
 -- | The demerits of breaking after a specified word (given the previous break
 -- point).
 --
 -- It is the number of arcs outbound from or inbound to the line before the
 -- break to or from words in another later line.
-demerit :: F.Forest -> Line -> Int
-demerit forest (Line start end) = (length outbound + length inbound)^3 where
+forestDemerit :: F.Forest -> Line -> Int
+forestDemerit forest (Line start end) = (length outbound + length inbound)^3 where
   line = [start .. end - 1]
   outbound =
     [ word
@@ -63,6 +75,10 @@ demerit forest (Line start end) = (length outbound + length inbound)^3 where
       child <- Set.toList $ F.children word forest,
       child >= end]
 
+-- | A candidate breakpoint.
+--
+-- This is a breakpoint that can be reached by using breakpoints that do not
+-- create any lines that exceed the badness treshold.
 data Candidate = Candidate {
   totalDemerit   :: !Int,
   candidateBreak :: !S.WordId,
@@ -76,9 +92,18 @@ instance Show Candidate where
     | b == candidateBreak p = show (d,b)
     | otherwise = show (d,b) ++ " <- " ++ show p
 
-extend :: S.WordId -> Int -> Candidate -> Candidate
+-- | Extend a candidate.
+extend
+  :: S.WordId  -- ^ the 'S.WordId' of the new candidate.
+  -> Int       -- ^ the demerit of the line formed by breaking the sentence
+               --   that remains after the previous 'Candidate' at the new
+               --   breakpoint
+               --   the new candidate
+  -> Candidate -- ^ the previous 'Candidate'.
+  -> Candidate
 extend word demerit prev = Candidate (demerit + totalDemerit prev) word prev
 
+-- | The chain created by following this Candidate backwards.
 chain :: Candidate -> [S.WordId]
 chain c0 = go [candidateBreak c0] c0 (previous c0) where
   go acc c cPrev
@@ -87,16 +112,22 @@ chain c0 = go [candidateBreak c0] c0 (previous c0) where
     | otherwise =
         go (candidateBreak cPrev:acc) cPrev (previous cPrev)
 
+-- | Initial candidate.
+--
+-- This corresponds to a breakpoint at the beginning of the sentence.
 initCandidate :: Candidate
 initCandidate = Candidate 0 0 initCandidate
 
+
+-- | Update a set of active 'Candidate's.
+--
 updateCandidates
-  :: (Line -> Int)
-  -> (Line -> Int)
-  -> Int
-  -> [Candidate]
-  -> S.WordId
-  -> [Candidate]
+  :: (Line -> Int) -- ^ badness function
+  -> (Line -> Int) -- ^ demerit function
+  -> Int           -- ^ tolerance
+  -> [Candidate]   -- ^ current active candidate set
+  -> S.WordId      -- ^ current break point
+  -> [Candidate]   -- ^ new active candidate set
 updateCandidates badness demerit tolerance active breakpoint =
   let line prev = Line (candidateBreak prev + 1) (breakpoint + 1)
       -- a line that includes the words after the last breakpoint, up to
@@ -113,19 +144,43 @@ updateCandidates badness demerit tolerance active breakpoint =
         | otherwise = [L.minimumBy (comparing totalDemerit) potential]
   in newCandidate ++ filter (not . stale) active
 
+-- | The list of active candidate break points for a sentence.
+--
+--
+-- @candidates d t forest sentence@ returns the set of active candidates
+-- after breaking @sentence@ into lines, using @forest@ to compute demerits,
+-- with desired line length @d@ and tolerance @t@.
+--
+-- The first element in this list is the last candidate that was found, i.e.
+-- which breaks the list the furthest. This is usually the candidate that
+-- you want.
 candidates :: Int -> Int -> F.Forest -> S.Sentence -> [Candidate]
 candidates desired tolerance  forest sentence =
-  let bd = badness sentence desired
-      dm = demerit forest
+  let bd = sentenceBadness sentence desired
+      dm = forestDemerit forest
       ws = [1..S.wordCount sentence]
   in L.foldl' (updateCandidates bd dm tolerance) [initCandidate] ws
+     -- todo: if we can't find a candidate, we should either increase the
+     -- tolerance or set an overful line. Right now lines could potentially
+     -- silently dissapear
 
+-- | The list of optimal break points (fewest total demerits) of a sentence.
+--
+-- @breakpoints d t forest sentence@ computes the list of breakpoints that
+-- break @sentence@ into lines of desired length @d@, with tolerance @t@,
+-- such that the demerits according to @forest@ are minimised.
+-- 
 breakpoints :: Int -> Int -> F.Forest -> S.Sentence -> [S.WordId]
 breakpoints desired tolerance forest sentence =
   let optimal [] = []
       optimal (cLast:_) = chain (extend (S.wordCount sentence) 0 cLast)
   in optimal (candidates desired tolerance forest sentence) 
 
+
+-- | Optimally split a sentence into lines.
+--
+-- @break t d forest sentence@ uses 'breakpoints' to compute optimal
+-- breakpoints, and then breaks 'S.Sentence' accordingly.
 break :: Int -> Int -> F.Forest -> S.Sentence -> [[S.Word]]
 break desired tolerance forest sentence =
   let bs = breakpoints desired tolerance forest sentence
