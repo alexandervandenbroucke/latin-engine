@@ -34,6 +34,8 @@ import qualified Diagrams.Backend.Rasterific as R
 import qualified Diagrams.Prelude as D
 import           Lens.Micro (Lens',lens,(^.))
 
+import qualified Diagrams.LineBreaking as LB
+
 -------------------------------------------------------------------------------
 -- ColourMap
 
@@ -159,7 +161,7 @@ childMarkers colourMap forest sentence d =
               | even p    = D.boundaryFrom d D.unit_Y
               | otherwise = D.boundaryFrom d D.unitY
             p1 .^. p2 =
-              let h = if even p then -1 else 1 * (1 - 0.7*(10 - r)/10)
+              let h = (if even p then -1 else 1) * (1 - 0.7*(10 - r)/10)
                   -- the idea is to make longer arcs higher, needs some work
                   c1 = D.r2 (0,h)
                   c2 = D.r2 (0,h) D.^+^ v
@@ -180,4 +182,4 @@ sentenceDiagram
 sentenceDiagram colourMap conf forest =
   D.vsep (conf^.lineSkipL) .
   map (D.hsep (conf^.wordSkipL) . map (wordDiagram colourMap forest)) .
-  S.splitSentence
+  LB.break 80 20 forest
