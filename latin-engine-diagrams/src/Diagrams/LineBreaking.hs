@@ -141,7 +141,7 @@ updateCandidates badness demerit tolerance active breakpoint =
         [extend breakpoint d prev
         | prev <- active,
           let b = badness (line prev),
-          let d = demerit (line prev) + abs b,
+          let d = tolerance * demerit (line prev) + 2*abs b,
           abs b <= tolerance]
       newCandidate
         | null potential = []
