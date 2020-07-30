@@ -179,7 +179,12 @@ sentenceDiagram
   -> F.Forest
   -> S.Sentence
   -> D.QDiagram R.B D.V2 Float Any
-sentenceDiagram colourMap conf forest =
-  D.vsep (conf^.lineSkipL) .
-  map (D.hsep (conf^.wordSkipL) . map (wordDiagram colourMap forest)) .
-  LB.break 80 20 forest
+sentenceDiagram colourMap conf forest sentence =
+  let bs = LB.breakpoints 80 20 forest sentence
+      lineLength l = sum (map (T.length . S.wordText) l) + length l - 1
+      lineDiagram c l = D.hsep (conf^.wordSkipL) [
+        D.hsep (conf^.wordSkipL) $ map (wordDiagram colourMap forest) l ]
+        -- R.texterific (show (LB.totalDemerit c, lineLength l))]
+  in D.vsep (conf^.lineSkipL) $
+     zipWith lineDiagram (drop 1 bs) $
+     LB.breakAt sentence (map LB.candidateBreak bs)

@@ -26,7 +26,21 @@ that a significant reduction in the constant factors could be achieved.
 
 -}
 
-module Diagrams.LineBreaking where
+module Diagrams.LineBreaking
+  ( -- * Lines
+    Line(..),
+    len,
+    sentenceBadness,
+    forestDemerit,
+    -- * Candidates
+    Candidate(..),
+    initCandidate, extend, chain,
+    -- * Line breaking
+    updateCandidates,
+    candidates,
+    breakpoints, breakAt, break
+  )
+where
 
 import qualified Data.IntSet as Set
 import qualified Data.List as L
@@ -35,6 +49,7 @@ import qualified Data.List.NonEmpty as NE
 import qualified Data.Maybe as Maybe
 import           Data.Ord (comparing)
 import qualified Data.Text as T
+import           Prelude hiding (break)
 
 import qualified Data.Sentence as S
 import qualified Data.Forest as F
@@ -108,13 +123,13 @@ extend
 extend word demerit prev = Candidate (demerit + totalDemerit prev) word prev
 
 -- | The chain created by following this Candidate backwards.
-chain :: Candidate -> [S.WordId]
-chain c0 = go [candidateBreak c0] c0 (previous c0) where
+chain :: Candidate -> [Candidate]
+chain c0 = go [c0] c0 (previous c0) where
   go acc c cPrev
     | candidateBreak c == 0 =
         acc
     | otherwise =
-        go (candidateBreak cPrev:acc) cPrev (previous cPrev)
+        go (cPrev:acc) cPrev (previous cPrev)
 
 -- | Initial candidate.
 --
@@ -141,7 +156,7 @@ updateCandidates badness demerit tolerance active breakpoint =
         [extend breakpoint d prev
         | prev <- active,
           let b = badness (line prev),
-          let d = tolerance * demerit (line prev) + 2*abs b,
+          let d = 10*demerit (line prev) + abs b,
           abs b <= tolerance]
       newCandidate
         | null potential = []
@@ -158,7 +173,7 @@ updateCandidates badness demerit tolerance active breakpoint =
 -- The first element in this list is the last candidate that was found, i.e.
 -- which breaks the list the furthest. This is usually the candidate that
 -- you want.
-candidates :: Int -> Int -> F.Forest -> S.Sentence -> [Candidate]
+candidates :: Int -> Int -> F.Forest -> S.Sentence -> NonEmpty Candidate
 candidates desired tolerance forest sentence =
   let bd = sentenceBadness sentence desired
       dm = forestDemerit forest
@@ -171,10 +186,10 @@ candidates desired tolerance forest sentence =
           -- find a breakpoint that didn't exceed the badness tolerance, and
           -- all previous breakpoints have become stale. In that case, we set
           -- an overful line, and reset the demerit score. We don't need more
-          -- accurate demerit accounting, because any later breakpoints must
+          -- accurate demerit accounting, because all later breakpoints must
           -- start from this breakpoint. Hence, their relative total demerits
           -- are still correct.
-  in NE.toList (L.foldl' update (initCandidate :| []) ws)
+  in L.foldl' update (initCandidate :| []) ws
 
 -- | The list of optimal break points (fewest total demerits) of a sentence.
 --
@@ -182,12 +197,30 @@ candidates desired tolerance forest sentence =
 -- break @sentence@ into lines of desired length @d@, with tolerance @t@,
 -- such that the demerits according to @forest@ are minimised.
 -- 
-breakpoints :: Int -> Int -> F.Forest -> S.Sentence -> [S.WordId]
+breakpoints :: Int -> Int -> F.Forest -> S.Sentence -> [Candidate]
 breakpoints desired tolerance forest sentence =
-  let optimal [] = []
-      optimal (cLast:_) = chain (extend (S.wordCount sentence) 0 cLast)
-  in optimal (candidates desired tolerance forest sentence) 
+  let w = S.wordCount sentence
+      cs = candidates desired tolerance forest sentence
+      dm = forestDemerit forest
+      bd = sentenceBadness sentence desired
+      lastBreakPoint = L.minimumBy (comparing totalDemerit) ps where
+        ps = [extend w (10 * dm l + abs (min 0 (bd l))) prev
+             | prev <- NE.toList cs,
+               let l = Line (candidateBreak prev + 1) (w + 1)
+             ]
+      -- The last break point is chosen without looking at positive badness.
+      -- This means that the last breakpoint is simply chosen to minimise total
+      -- demerits, without incurring demerit for being underfull.
+  in chain lastBreakPoint
 
+
+
+-- | Break a sentence at the given breakpoints.
+breakAt :: S.Sentence -> [S.WordId] -> [[S.Word]]
+breakAt sentence bs =
+  let line start end =
+        Maybe.catMaybes [S.wordNr w sentence | w <- [(start+1)..end]]
+  in zipWith line bs (drop 1 bs)
 
 -- | Optimally split a sentence into lines.
 --
@@ -196,6 +229,4 @@ breakpoints desired tolerance forest sentence =
 break :: Int -> Int -> F.Forest -> S.Sentence -> [[S.Word]]
 break desired tolerance forest sentence =
   let bs = breakpoints desired tolerance forest sentence
-      line start end =
-        Maybe.catMaybes [S.wordNr w sentence | w <- [(start+1)..end]]
-  in zipWith line bs (drop 1 bs)
+  in breakAt sentence (map candidateBreak bs)
