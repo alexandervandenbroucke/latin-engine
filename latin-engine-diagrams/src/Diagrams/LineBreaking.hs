@@ -30,6 +30,9 @@ module Diagrams.LineBreaking where
 
 import qualified Data.IntSet as Set
 import qualified Data.List as L
+import           Data.List.NonEmpty (NonEmpty((:|)))
+import qualified Data.List.NonEmpty as NE
+import qualified Data.Maybe as Maybe
 import           Data.Ord (comparing)
 import qualified Data.Text as T
 
@@ -56,24 +59,25 @@ sentenceBadness
   -> Int
 sentenceBadness sentence desired line = desired - len sentence line
 
--- | The demerits of breaking after a specified word (given the previous break
+-- | The demerits of breaking after a specified word (given the previous break-
 -- point).
 --
 -- It is the number of arcs outbound from or inbound to the line before the
 -- break to or from words in another later line.
 forestDemerit :: F.Forest -> Line -> Int
-forestDemerit forest (Line start end) = (length outbound + length inbound)^3 where
-  line = [start .. end - 1]
-  outbound =
-    [ word
-    | word <- line,
-      F.Child parent <- [F.statusOf forest word],
-      parent >= end]
-  inbound =
-    [ child
-    | word <- line,
-      child <- Set.toList $ F.children word forest,
-      child >= end]
+forestDemerit forest (Line start end) =
+  let line = [start .. end - 1]
+      outbound =
+        [ word
+        | word <- line,
+          F.Child parent <- [F.statusOf forest word],
+          parent >= end]
+      inbound =
+        [ child
+        | word <- line,
+          child <- Set.toList $ F.children word forest,
+          child >= end]
+  in (length outbound + length inbound)^3
 
 -- | A candidate breakpoint.
 --
@@ -155,14 +159,22 @@ updateCandidates badness demerit tolerance active breakpoint =
 -- which breaks the list the furthest. This is usually the candidate that
 -- you want.
 candidates :: Int -> Int -> F.Forest -> S.Sentence -> [Candidate]
-candidates desired tolerance  forest sentence =
+candidates desired tolerance forest sentence =
   let bd = sentenceBadness sentence desired
       dm = forestDemerit forest
       ws = [1..S.wordCount sentence]
-  in L.foldl' (updateCandidates bd dm tolerance) [initCandidate] ws
-     -- todo: if we can't find a candidate, we should either increase the
-     -- tolerance or set an overful line. Right now lines could potentially
-     -- silently dissapear
+      update cs w =
+        case NE.nonEmpty (updateCandidates bd dm tolerance (NE.toList cs) w) of
+          Just newCs -> newCs
+          Nothing -> extend w 0 (NE.head cs) :| []
+          -- If the candidate list becomes empty, that means that we couldn't
+          -- find a breakpoint that didn't exceed the badness tolerance, and
+          -- all previous breakpoints have become stale. In that case, we set
+          -- an overful line, and reset the demerit score. We don't need more
+          -- accurate demerit accounting, because any later breakpoints must
+          -- start from this breakpoint. Hence, their relative total demerits
+          -- are still correct.
+  in NE.toList (L.foldl' update (initCandidate :| []) ws)
 
 -- | The list of optimal break points (fewest total demerits) of a sentence.
 --
@@ -184,6 +196,6 @@ breakpoints desired tolerance forest sentence =
 break :: Int -> Int -> F.Forest -> S.Sentence -> [[S.Word]]
 break desired tolerance forest sentence =
   let bs = breakpoints desired tolerance forest sentence
-      line start end = maybe [] id $
-        sequence [S.wordNr w sentence | w <- [(start+1)..end]]
+      line start end =
+        Maybe.catMaybes [S.wordNr w sentence | w <- [(start+1)..end]]
   in zipWith line bs (drop 1 bs)
