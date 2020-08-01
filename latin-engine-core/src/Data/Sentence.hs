@@ -108,6 +108,6 @@ splitLines width len = go 0 [] where
         newLine = x:line
         newLength = n + len x
 
--- | Split a sentence into lines of at most 80 columns.
-splitSentence :: Sentence -> [[Word]]
-splitSentence = splitLines 80 (T.length . wordText) . toWords
+-- | Split a sentence into lines of at most the given number of columns.
+splitSentence :: Int -> Sentence -> [[Word]]
+splitSentence w = splitLines w (T.length . wordText) . toWords

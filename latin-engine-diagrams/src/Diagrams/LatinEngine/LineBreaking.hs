@@ -1,6 +1,6 @@
 {- |
 
-Module:      Diagrams.LineBreaking
+Module:      Diagrams.LatinEngine.LineBreaking
 Description: Algorithm for breaking sentences into lines.
 Maintainer:  alexander.vandenbroucke@gmail.com
 
@@ -26,7 +26,7 @@ that a significant reduction in the constant factors could be achieved.
 
 -}
 
-module Diagrams.LineBreaking
+module Diagrams.LatinEngine.LineBreaking
   ( -- * Lines
     Line(..),
     len,

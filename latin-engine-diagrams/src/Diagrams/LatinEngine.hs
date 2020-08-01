@@ -34,7 +34,7 @@ import qualified Diagrams.Backend.Rasterific as R
 import qualified Diagrams.Prelude as D
 import           Lens.Micro (Lens',lens,(^.))
 
-import qualified Diagrams.LineBreaking as LB
+import qualified Diagrams.LatinEngine.LineBreaking as LB
 
 -------------------------------------------------------------------------------
 -- ColourMap
@@ -82,14 +82,19 @@ data Config = Config {
   _confParagraphSkip :: Float,             -- ^ space between paragaphs
   _confLineSkip      :: Float,             -- ^ space between sentences
   _confWordSkip      :: Float,             -- ^ space between words
-  _confScale         :: Float              -- ^ scaling factor of the final
+  _confScale         :: Float,             -- ^ scaling factor of the final
                                            --   diagram
+  _confLineBreaking  :: F.Forest -> S.Sentence -> [[S.Word]]
+  -- ^ line breaking algorithm
 }
 
--- | The default config has the 'defaultColourMap', skips 2, 2 and 1, and
+-- | The default config has the 'defaultColours', skips 2, 2 and 1, and
 -- a scale factor of 15.
+--
+-- It uses the intelligent line breaking algorithm 'LB.break" with a desired
+-- width of 80 columns and a tolerance of 20
 instance D.Default Config where
-  def = Config defaultColours 2 2 1 15
+  def = Config defaultColours 2 2 1 15 (LB.break 80 20)
 
 -- | Lens to the 'Config's 'ColourMap'
 coloursL :: Lens' Config [D.Colour Double]
@@ -114,6 +119,11 @@ wordSkipL =
 scaleL :: Lens' Config Float
 scaleL =
   lens _confScale (\conf scale -> conf{_confScale = scale})
+
+-- | Lens to the 'Config's line breaking algorithm
+lineBreakingL :: Lens' Config (F.Forest -> S.Sentence -> [[S.Word]])
+lineBreakingL =
+  lens _confLineBreaking (\conf lb -> conf{_confLineBreaking = lb})
 
 -- | Render a set of sentences and corresponding forests.
 sentencesDiagram
@@ -179,12 +189,7 @@ sentenceDiagram
   -> F.Forest
   -> S.Sentence
   -> D.QDiagram R.B D.V2 Float Any
-sentenceDiagram colourMap conf forest sentence =
-  let bs = LB.breakpoints 80 20 forest sentence
-      lineLength l = sum (map (T.length . S.wordText) l) + length l - 1
-      lineDiagram c l = D.hsep (conf^.wordSkipL) [
+sentenceDiagram colourMap conf forest =
+  let lineDiagram l = D.hsep (conf^.wordSkipL) [
         D.hsep (conf^.wordSkipL) $ map (wordDiagram colourMap forest) l ]
-        -- R.texterific (show (LB.totalDemerit c, lineLength l))]
-  in D.vsep (conf^.lineSkipL) $
-     zipWith lineDiagram (drop 1 bs) $
-     LB.breakAt sentence (map LB.candidateBreak bs)
+  in D.vsep (conf^.lineSkipL) . map lineDiagram . (conf^.lineBreakingL) forest
