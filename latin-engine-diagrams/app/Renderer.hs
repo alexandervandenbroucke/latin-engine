@@ -115,8 +115,8 @@ renderTask =
            <> OA.short 't'
            <> OA.help (concat [
               "Tolerance for the adaptive line breaking.",
-              " The algorithm tries to avoid creating lines that differ from",
-              " COLUMNS by more or less than TOLERANCE." ])
+              " The algorithm tries to avoid creating lines whose length",
+              " differs from COLUMNS by more than TOLERANCE." ])
            <> OA.metavar "TOLERANCE"
            <> OA.value 20)
   in mkRenderTask <$> output <*> forest <*> config <*> source
