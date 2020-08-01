@@ -64,9 +64,9 @@ You can use the up or down arrow keys to move between sentences and
 annotations, depending on which window has focus.
 
 You can press `s` to save the current state of the program. The parse-tree
-forests is saved in an `.fst` file, and the annotations are saved in an `.ann`
-file. Saved forests and annotations are loaded automatically when you open
-the program.
+forests is saved in an `.fst.json` file, and the annotations are saved in an
+`.ann.json` file. Saved forests and annotations are loaded automatically when
+you open the program.
 
 
 Using the `render` Application
@@ -79,10 +79,42 @@ You can render a representation of the parse-tree forest to PDF using the
 $ render latin/DBG/Caesar_DBG_1.txt
 ```
 
-This looks for an associated `.fst` file and then renders the text and its
+This looks for an associated `.fst.json` file and then renders the text and its
 parse-tree forest using colourful arcs and boxes. The output can be kind of
 messy though. A better lay-out algorithm should be devised. The result is saved
 in a PDF bearing the same name as the input file.
 For practical translation, it can be useful to have both the interactive
 command and the pdf open. You might even use a file-watch command to
 automatically re-render the pdf.
+
+The paragraph above describes the default behaviour, which can be tweaked by
+passing a command line argument.
+The full list of command line arguments is as follows:
+
+```
+Usage: render [-o|--output FILE] [-f|--forest FORESTFILE] 
+              [-p|--paragraph-skip PARAGRAPHSKIP] [-l|--line-skip LINESKIP] 
+              [-w|--word-skip WORDSKIP] [-s|--scale SCALE] 
+              [(-a|--adaptive) | (-r|--word-wrap)] [-c|--columns COLUMNS] 
+              [-t|--tolerance TOLERANCE] TARGET
+  Render the TARGET text's parse forests to PDF.
+
+Available options:
+  -o,--output FILE         File to Write output to
+  -f,--forest FORESTFILE   File to read the forests from (in json format)
+  -p,--paragraph-skip PARAGRAPHSKIP
+                           Space between paragraphs
+  -l,--line-skip LINESKIP  Space between lines
+  -w,--word-skip WORDSKIP  Space between words
+  -s,--scale SCALE         Scaling factor of the final output
+  -a,--adaptive            Use adaptive line breaking to avoid breaking
+                           subclauses
+  -r,--word-wrap           Use simple line breaking that wraps lines at a
+                           certain column width
+  -c,--columns COLUMNS     Desired number of columns per line
+  -t,--tolerance TOLERANCE Tolerance for the adaptive line breaking. The
+                           algorithm tries to avoid creating lines that differ
+                           from COLUMNS by more or less than TOLERANCE.
+  TARGET                   File containing the text to be rendered
+  -h,--help                Show this help text
+```
