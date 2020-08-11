@@ -54,7 +54,7 @@ renderTask =
          <> OA.short 'o'
          <> OA.metavar "FILE"
          <> OA.value Nothing
-         <> OA.help "File to Write output to" )
+         <> OA.help "File to write output to" )
       forest = optionalFilePathOption
         (OA.long "forest"
          <> OA.short 'f'
