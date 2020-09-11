@@ -17,7 +17,14 @@ module Diagrams.LatinEngine (
   -- * Colour Maps
   ColourMap, makeColourMap, defaultColours,
   -- * Config
-  Config(..), coloursL, paragraphSkipL, lineSkipL, wordSkipL, scaleL,
+  Config(..),
+  textColourL,
+  backgroundColourL,
+  coloursL,
+  paragraphSkipL,
+  lineSkipL,
+  wordSkipL,
+  scaleL,
   -- * Making Diagrams of Sentences
   sentencesDiagram
 )
@@ -59,9 +66,15 @@ defaultColours = [D.green, D.red, D.blue,D.purple,D.orange]
 --
 -- Note: at least two colours must be provided.
 --
--- Note: words that are 'F.Clear' will default to 'D.black'.
-forestColourMap :: [D.Colour Double] -> F.Forest -> Maybe ColourMap
-forestColourMap colours forest = do
+-- Note: words that are 'F.Clear' receive a provided defautl colour.
+forestColourMap
+  :: D.Colour Double
+     -- ^ The default colour for 'F.Clear' words.
+  -> [D.Colour Double]
+     -- ^ The list of colours for graph-colouring
+  -> F.Forest
+  -> Maybe ColourMap
+forestColourMap clearColour colours forest = do
   let colour = zip (cycle colours)
       go m (c,r)
         | M.member r m = Nothing
@@ -69,7 +82,7 @@ forestColourMap colours forest = do
             permissible = filter (/= c) colours
             cs = zip (cycle permissible) (S.toList $ F.children r forest)
   m <- foldM go M.empty (colour (S.toList $ F.roots forest))
-  return (\i -> M.findWithDefault D.black i m)
+  return (\i -> M.findWithDefault clearColour i m)
 
       
 
@@ -78,11 +91,13 @@ forestColourMap colours forest = do
 
 -- | Parameters for rendering a sentence and parse tree.
 data Config = Config {
-  _confColours       :: [D.Colour Double], -- ^ colour map for roots and arcs
-  _confParagraphSkip :: Float,             -- ^ space between paragaphs
-  _confLineSkip      :: Float,             -- ^ space between sentences
-  _confWordSkip      :: Float,             -- ^ space between words
-  _confScale         :: Float,             -- ^ scaling factor of the final
+  _confTextColour       :: D.Colour Double,   -- ^ colour of the text
+  _confBackgroundColour :: D.Colour Double,   -- ^ colour of the text  
+  _confColours          :: [D.Colour Double], -- ^ colours for roots and arcs
+  _confParagraphSkip    :: Float,             -- ^ space between paragaphs
+  _confLineSkip         :: Float,             -- ^ space between sentences
+  _confWordSkip         :: Float,             -- ^ space between words
+  _confScale            :: Float,             -- ^ scaling factor of the final
                                            --   diagram
   _confLineBreaking  :: F.Forest -> S.Sentence -> [[S.Word]]
   -- ^ line breaking algorithm
@@ -94,7 +109,16 @@ data Config = Config {
 -- It uses the intelligent line breaking algorithm 'LB.break" with a desired
 -- width of 80 columns and a tolerance of 20
 instance D.Default Config where
-  def = Config defaultColours 2 2 1 15 (LB.break 80 20)
+  def = Config D.black D.white defaultColours 2 2 1 15 (LB.break 80 20)
+
+-- | Lens to the 'Config's text colour
+textColourL :: Lens' Config (D.Colour Double)
+textColourL = lens _confTextColour (\conf c -> conf{_confTextColour = c})
+
+-- | Lens to the 'Config's text colour
+backgroundColourL :: Lens' Config (D.Colour Double)
+backgroundColourL =
+  lens _confBackgroundColour (\conf c -> conf{_confBackgroundColour = c})
 
 -- | Lens to the 'Config's 'ColourMap'
 coloursL :: Lens' Config [D.Colour Double]
@@ -129,26 +153,34 @@ lineBreakingL =
 sentencesDiagram
   :: Config -> [S.Sentence] -> [F.Forest] -> D.QDiagram R.B D.V2 Float Any
 sentencesDiagram conf sentences forests =
-  let diagrams = zipWith  sentenceDiagram' forests sentences
-      colourMap = maybe (const D.black) id . forestColourMap (conf^.coloursL)
+  let diagrams = zipWith sentenceDiagram' forests sentences
+      colourMap =
+        maybe (const D.black) id
+        . forestColourMap (conf^.textColourL) (conf^.coloursL)
       sentenceDiagram' forest sentence =
         childMarkers (colourMap forest) forest sentence $
         sentenceDiagram (colourMap forest) conf forest sentence
-  in D.scale (conf^.scaleL) (D.vsep (conf^.paragraphSkipL) diagrams)
+  in D.bg (conf^.backgroundColourL) $
+     D.scale (conf^.scaleL) (D.vsep (conf^.paragraphSkipL) diagrams)
 
 -- | Render a single word.
 --
 -- The diagram of the word is named with its word id.
 wordDiagram
-  :: ColourMap -> F.Forest -> S.Word -> D.QDiagram R.B D.V2 Float Any
-wordDiagram colourMap forest word =
-  let  txt = R.texterific (T.unpack (S.wordText word))  D.# D.fc colour
-       colour = colourMap (S.wordId word)
-       marker
-         | F.Root <- forest `F.statusOf` S.wordId word =
-             D.bgFrame 0.1 colour (D.bgFrame 0.1 D.white txt)
-         | otherwise =
-             txt
+  :: Config
+  -> ColourMap
+  -> F.Forest
+  -> S.Word
+  -> D.QDiagram R.B D.V2 Float Any
+wordDiagram conf colourMap forest word =
+  let colour = colourMap (S.wordId word)
+      txt = R.texterific (T.unpack (S.wordText word))  D.# D.fc colour
+      marker
+        | F.Root <- forest `F.statusOf` S.wordId word =
+            D.bgFrame 0.1 colour $ D.bgFrame 0.1 (conf^.backgroundColourL) $
+            txt
+        | otherwise =
+            txt
   in marker D.# D.centerX D.# D.named (S.wordId word) D.# D.alignL
 
 -- | Overlay (underlay really) markers the arcs on the diagram of a sentence.
@@ -191,5 +223,5 @@ sentenceDiagram
   -> D.QDiagram R.B D.V2 Float Any
 sentenceDiagram colourMap conf forest =
   let lineDiagram l = D.hsep (conf^.wordSkipL) [
-        D.hsep (conf^.wordSkipL) $ map (wordDiagram colourMap forest) l ]
+        D.hsep (conf^.wordSkipL) $ map (wordDiagram conf colourMap forest) l ]
   in D.vsep (conf^.lineSkipL) . map lineDiagram . (conf^.lineBreakingL) forest

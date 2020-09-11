@@ -61,13 +61,18 @@ renderTask =
          <> OA.metavar "FORESTFILE"
          <> OA.value Nothing
          <> OA.help "File to read the forests from (in json format)")
-      config =
-        LE.Config  (D.def^.LE.coloursL)
-        <$> parSkip
+      config = uncurry LE.Config
+        <$> coloursTextBg
+        <*> pure (D.def^.LE.coloursL)
+        <*> parSkip
         <*> lineSkip
         <*> wordSkip
         <*> scale
         <*> lineBreaking
+      coloursTextBg = OA.flag (D.black,D.white) (D.gray,D.black)
+        (OA.long "night-mode"
+        <> OA.short 'n'
+        <> OA.help "Night mode, dark background, light text")
       parSkip = OA.option OA.auto
         (OA.long "paragraph-skip"
          <> OA.short 'p'
