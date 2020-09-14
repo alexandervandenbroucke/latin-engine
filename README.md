@@ -38,7 +38,7 @@ file to a relatively small unit, e.g. a single paragraph. A current limitation
 of the application is that it recognises sentences based on a period followed
 by whitespace. This can lead to problems when the text contains initials.
 You must manually delete the whitespace following a period that is not a full
-stop.
+stop (e.g., in the initials of a person).
 
 You can load the file by passing it as a command line argument, e.g.,
 
@@ -68,6 +68,8 @@ forests is saved in an `.fst.json` file, and the annotations are saved in an
 `.ann.json` file. Saved forests and annotations are loaded automatically when
 you open the program.
 
+You can quit the application using `q` or by pressing the escape key.
+
 
 Using the `render` Application
 ------------------------------
@@ -80,19 +82,27 @@ $ render latin/DBG/Caesar_DBG_1.txt
 ```
 
 This looks for an associated `.fst.json` file and then renders the text and its
-parse-tree forest using colourful arcs and boxes. The output can be kind of
-messy though. A better lay-out algorithm should be devised. The result is saved
+parse-tree forest using colourful arcs and boxes. The result is saved
 in a PDF bearing the same name as the input file.
 For practical translation, it can be useful to have both the interactive
 command and the pdf open. You might even use a file-watch command to
 automatically re-render the pdf.
 
-The paragraph above describes the default behaviour, which can be tweaked by
+The application uses a variant of the Knuth-Plass algorithm, modified to avoid
+breaking a subclause over multiple lines. This is the adaptive algorithm
+mentioned below. It exposes two knobs: `COLUMNS`, which is the desired number
+of columns per line, and `TOLERANCE`. The algorithm tries to avoid creating
+lines whose lenght differst from `COLUMNS` by more than `TOLERANCE`.
+Default values are 80 and 20, respectively. See the documentation in
+`Diagrams.LatinEngine.LineBreaking`, for more details.
+
+The paragraphs above describes the default behaviour, which can be tweaked by
 passing a command line argument.
 The full list of command line arguments is as follows:
 
 ```
 Usage: render [-o|--output FILE] [-f|--forest FORESTFILE] 
+              [(-d|--day-mode) | (-n|--night-mode)] 
               [-p|--paragraph-skip PARAGRAPHSKIP] [-l|--line-skip LINESKIP] 
               [-w|--word-skip WORDSKIP] [-s|--scale SCALE] 
               [(-a|--adaptive) | (-r|--word-wrap)] [-c|--columns COLUMNS] 
@@ -100,8 +110,10 @@ Usage: render [-o|--output FILE] [-f|--forest FORESTFILE]
   Render the TARGET text's parse forests to PDF.
 
 Available options:
-  -o,--output FILE         File to Write output to
+  -o,--output FILE         File to write output to
   -f,--forest FORESTFILE   File to read the forests from (in json format)
+  -d,--day-mode            Day mode, light background, dark text
+  -n,--night-mode          Night mode, dark background, light text
   -p,--paragraph-skip PARAGRAPHSKIP
                            Space between paragraphs
   -l,--line-skip LINESKIP  Space between lines
@@ -113,8 +125,8 @@ Available options:
                            certain column width
   -c,--columns COLUMNS     Desired number of columns per line
   -t,--tolerance TOLERANCE Tolerance for the adaptive line breaking. The
-                           algorithm tries to avoid creating lines that differ
-                           from COLUMNS by more or less than TOLERANCE.
+                           algorithm tries to avoid creating lines whose length
+                           differs from COLUMNS by more than TOLERANCE.
   TARGET                   File containing the text to be rendered
   -h,--help                Show this help text
 ```

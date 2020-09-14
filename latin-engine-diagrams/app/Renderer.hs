@@ -69,7 +69,12 @@ renderTask =
         <*> wordSkip
         <*> scale
         <*> lineBreaking
-      coloursTextBg = OA.flag (D.black,D.white) (D.gray,D.black)
+      coloursTextBg = dayMode OA.<|> nightMode
+      dayMode = OA.flag (D.black,D.white) (D.black,D.white)
+        (OA.long "day-mode"
+        <> OA.short 'd'
+        <> OA.help "Day mode, light background, dark text")
+      nightMode = OA.flag' (D.gray,D.black)
         (OA.long "night-mode"
         <> OA.short 'n'
         <> OA.help "Night mode, dark background, light text")
