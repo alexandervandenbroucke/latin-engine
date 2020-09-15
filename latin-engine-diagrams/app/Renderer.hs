@@ -62,14 +62,13 @@ renderTask =
          <> OA.value Nothing
          <> OA.help "File to read the forests from (in json format)")
       config = uncurry LE.Config
-        <$> coloursTextBg
+        <$> (dayMode OA.<|> nightMode)
         <*> pure (D.def^.LE.coloursL)
         <*> parSkip
         <*> lineSkip
         <*> wordSkip
         <*> scale
         <*> lineBreaking
-      coloursTextBg = dayMode OA.<|> nightMode
       dayMode = OA.flag (D.black,D.white) (D.black,D.white)
         (OA.long "day-mode"
         <> OA.short 'd'
