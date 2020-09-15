@@ -252,36 +252,45 @@ handleAnnotation n editors = do
     _  -> return $
           editors & annL.ID.valueL n ?~ [S.wordText w,T.pack annotation]
 
-
+-- | Handle events
 handleEvent :: UIState -> BrickEvent Name () -> EventM Name (Next UIState)
-handleEvent uiState (AppEvent ()) =
-  continue uiState
-
 handleEvent uiState (VtyEvent (Vty.EvKey Vty.KEsc [])) = halt uiState
-
-handleEvent uiState (VtyEvent (Vty.EvKey Vty.KUp []))
-  | PAR <- uiState^.focusedL = continue (uiState & editorsL %~ Z.left)
-  | ANN <- uiState^.focusedL = continue (uiState & annotationL %~ ID.prev)
-  | MB  <- uiState^.focusedL = continue uiState
-
-handleEvent uiState (VtyEvent (Vty.EvKey Vty.KDown []))
-  | PAR <- uiState^.focusedL, not (Z.endp (uiState^.editorsL)) =
-      continue (uiState & editorsL %~ Z.right)
-  | ANN <- uiState^.focusedL = continue (uiState & annotationL %~ ID.next)
-  | otherwise = continue uiState
-
+handleEvent uiState (VtyEvent (Vty.EvKey (Vty.KChar 'q') [])) = halt uiState
 handleEvent uiState evt
-  | mb <- uiState^.minibufferL, not (MB.isDone mb) = do
+  | mb <- uiState^.minibufferL, not (MB.isDone mb) =
+      -- This handler forwards key events to the minibuffer.      
       MB.handleMiniBufferEvent mb evt >>= continue . updateMiniBuffer uiState
+handleEvent uiState (VtyEvent (Vty.EvKey key modifiers)) =
+  -- Other key events do not halt, and are delegated to another function.
+  handleKeyEvent key modifiers uiState >>= continue
+handleEvent uiState _ = continue uiState -- default catch-all case
 
-handleEvent uiState (VtyEvent (Vty.EvKey (Vty.KChar c) []))
-  | 'q' <- c
-  = halt uiState
+-- | Handle keypress events that cannot halt.
+handleKeyEvent
+  :: MonadIO m => Vty.Key -> [Vty.Modifier] -> UIState -> m UIState
+handleKeyEvent key modifiers uiState
+  | Vty.KUp <- key, [] <- modifiers = return $ case uiState^.focusedL of
+      PAR -> uiState & editorsL %~ Z.left
+      ANN -> uiState & annotationL %~ ID.prev
+      MB  -> uiState
+  | Vty.KDown <- key, [] <- modifiers = return $ case uiState^.focusedL of
+      PAR | not (Z.endp (uiState^.editorsL)) ->
+            uiState & editorsL %~ Z.right
+      ANN ->
+        uiState & annotationL %~ ID.next
+      _ ->
+        uiState
+  | Vty.KChar c <- key = handleCharEvent c uiState
+  | otherwise = return uiState
+
+-- | Handle keypress events that correspond to a character key.
+handleCharEvent :: MonadIO m => Char -> UIState -> m UIState
+handleCharEvent c uiState
   | 'f' <- c
   = let swap MB  = MB
         swap PAR = if uiState^?annotationL == Nothing then PAR else ANN
         swap ANN = PAR
-    in continue (uiState & focusedL %~ swap)
+    in return (uiState & focusedL %~ swap)
   | 's' <- c
   = let mb (Left e) = do
           MB.message ("Error: " ++ E.displayException (e :: E.IOException))
@@ -291,20 +300,18 @@ handleEvent uiState (VtyEvent (Vty.EvKey (Vty.KChar c) []))
           MB.abort
     in do
       result <- liftIO $ E.try $ saveEditors (uiState^.filePathL) uiState
-      continue (uiState & minibufferL .~ mb result)
+      return (uiState & minibufferL .~ mb result)
   | Just editors <- uiState^.editorL
-  = continue $ updateMiniBuffer uiState $ do
-      editors' <- handleEditorEvent editors uiState c
+  = return $ updateMiniBuffer uiState $ do
+      editors' <- handleEditorEvent editors (uiState^.focusedL) c
       return (\s -> s & editorL ?~ editors' & minibufferL .~ MB.abort)
+  | otherwise = return uiState
 
-handleEvent uiState _evt = continue uiState
-
-handleEditorEvent
-  :: Editors
-  -> UIState
-  -> Char
-  -> MB.MiniBuffer Name Editors
-handleEditorEvent editors uiState c
+-- | Handle commands to the editor.
+--
+-- These events can only affect the editor state, through a minibuffer.
+handleEditorEvent :: Editors -> Name -> Char -> MB.MiniBuffer Name Editors
+handleEditorEvent editors focused c
   | 'r' <- c = do
       root <- MB.promptNatural MB "root (C-g to cancel): "
       _ <- safeWordNr root (editors^.senL.SE.sentenceL)
@@ -320,14 +327,14 @@ handleEditorEvent editors uiState c
       n <- MB.promptNatural MB "erase (C-g to cancel): "
       _ <- safeWordNr n (editors^.senL.SE.sentenceL)
       return (editors & senL.SE.forestL %~ F.clear n)
-  | 'a' <- c, ANN <- uiState^.focusedL,
+  | 'a' <- c, ANN <- focused,
     n <- editors^.annL.ID.focusL,
     Just{} <- S.wordNr n (editors^.senL.SE.sentenceL) =
       handleAnnotation n editors
   | 'a' <- c = do
       n <- MB.promptNatural MB "annotate (C-g to cancel): "
       handleAnnotation n editors
-  | 'u' <- c, ANN <- uiState^.focusedL = do
+  | 'u' <- c, ANN <- focused = do
       return (editors & annL.ID.valueL (editors^.annL.ID.focusL) .~ Nothing)
   | 'u' <- c = do
       n <- MB.promptNatural MB "unannotate (C-g to cancel): "
