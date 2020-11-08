@@ -156,9 +156,8 @@ declV = mkDetermination V <$> mconcat [
   "ebus" .> case_ ABL P F,
   "es" .> case_ VOC P F]
 
-determine :: Parser Determination -> String -> IO ()
-determine p0 str = do
-  let ps = parses (Language.Parser.reverse p0) (Reverse str)
+prettyParses :: [Parser Determination] -> String -> IO ()
+prettyParses ps str = do 
   let prettyDet (Determination d c m g) =
         L.intercalate "," [show c, show m, show g] ++ " ("  ++ show d ++ ")"
   let pretty (pre,post,det) =
@@ -167,4 +166,8 @@ determine p0 str = do
    (n,p) <- zip [0..] ps,
    let (pre,post) = splitAt n str,
    det <- epsilon p]
-  
+
+determine :: Parser Determination -> String -> IO ()
+determine p0 str =
+  let ps = parses (Language.Parser.reverse p0) (Reverse str)
+  in prettyParses ps str

@@ -188,8 +188,8 @@ instance IsString (Parser ()) where
 reverse :: Parser a -> Parser a
 reverse Empty = Empty
 reverse (Eps x) = Eps x
-reverse (pb :.> pa) = pa <. pb
-reverse (pa :<. pb) = pb .> pa
+reverse (pb :.> pa) = reverse pa <. reverse pb
+reverse (pa :<. pb) = reverse pb .> reverse pa
 reverse (pa :<> pa') = reverse pa <> reverse pa'
 reverse (Symbols cs) = Symbols cs
 
