@@ -1,6 +1,6 @@
 {- |
 
-Module:      Data.Parser
+Module:      Language.Parser
 Description: Parser for an inflected language 
 Maintainer:  alexander.vandenbroucke@gmail.com
 
@@ -28,7 +28,7 @@ can be reversed, and 'String's or 'T.Text's can be parsed from the rear using
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-module Data.Parser (
+module Language.Parser (
   -- * Parser
   Parser(..),
   empty,
@@ -100,8 +100,6 @@ instance Semigroup (Parser a) where
   Empty <> p = p
   p <> Empty = p
   (p1 :<> p2) <> p3 = p1 <> (p2 <> p3)
-  (Symbols cs :.> p1) <> (Symbols cs' :.> p2) =
-    Symbols (L.nub (cs ++ cs')) :.> (p1 <> p2)
   p1 <> p2 = p1 :<> p2
 
 instance Monoid (Parser a) where
@@ -192,7 +190,7 @@ reverse Empty = Empty
 reverse (Eps x) = Eps x
 reverse (pb :.> pa) = pa <. pb
 reverse (pa :<. pb) = pb .> pa
-reverse (pa :<> pa') = reverse pa :<> reverse pa'
+reverse (pa :<> pa') = reverse pa <> reverse pa'
 reverse (Symbols cs) = Symbols cs
 
 -------------------------------------------------------------------------------
@@ -264,12 +262,12 @@ instance Parse T.Text where
 
 -- | A newtype wrapper that does parsing on @str@ starting from the end.
 --
--- prop> parse p txt = parse (reverse p) (ReverseText txt)
--- prop> parse p (T.reverse txt) = parse p (ReverseText txt)
+-- prop> parse p txt = parse (reverse p) (Reverse txt)
+-- prop> parse p (T.reverse txt) = parse p (Reverse txt)
 --
 -- As a consequence, we have that
 --
--- > parse (reverse p) (T.reverse txt) = parse (reverse p) (ReverseText txt)
+-- > parse (reverse p) (T.reverse txt) = parse (reverse p) (Reverse txt)
 -- >                                   = parse p txt
 --
 -- The main utility however, comes from using partial 'parses', where this

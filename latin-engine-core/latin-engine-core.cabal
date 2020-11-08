@@ -22,7 +22,7 @@ library
                        Data.Paragraph,
                        Data.Forest,
                        Data.Forest.Internal,
-                       Data.Parser,
+                       Language.Parser,
                        Language.Latin
   build-depends:       base ^>=4.11.1.0,
                        text ^>=1.2.3.1,

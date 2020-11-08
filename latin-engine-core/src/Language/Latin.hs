@@ -10,8 +10,8 @@ Maintainer:  alexander.vandenbroucke@gmail.com
 
 module Language.Latin where
 
-import Data.Parser
-
+import qualified Data.List as L
+import           Language.Parser
 
 -------------------------------------------------------------------------------
 -- Data types for declensions
@@ -44,9 +44,9 @@ declIII =
         "is" .> case_ GEN S g,
         "i"  .> case_ DAT S g,
         "e"  .> case_ ABL S g,
+        ""  .> case_ VOC S g,
         "es" .> case_ NOM P g,
         "es" .> case_ ACC P g,
-        ""  .> case_ VOC S g,
         ("um" <> "ium") .> case_ GEN P g,
         "ibus" .> case_ DAT P g,
         "ibus" .> case_ ABL P g,
@@ -55,7 +55,6 @@ declIII =
         "is" .> case_ GEN S N,
         "i"  .> case_ DAT S N,
         "e"  .> case_ ABL S N,
-        "e"  .> case_ VOC S N,
         ("a" <> "ia") .> case_ NOM P N,
         ("a" <> "ia") .> case_ ACC P N,
         ("um" <> "ium") .> case_ GEN P N,
@@ -67,6 +66,7 @@ declIII =
     cases F,
     case_ NOM S N,
     case_ ACC S N,
+    case_ VOC S N,    
     cases_N]
 
 declI :: Parser Determination
@@ -155,3 +155,16 @@ declV = mkDetermination V <$> mconcat [
   "ebus" .> case_ DAT P F,
   "ebus" .> case_ ABL P F,
   "es" .> case_ VOC P F]
+
+determine :: Parser Determination -> String -> IO ()
+determine p0 str = do
+  let ps = parses (Language.Parser.reverse p0) (Reverse str)
+  let prettyDet (Determination d c m g) =
+        L.intercalate "," [show c, show m, show g] ++ " ("  ++ show d ++ ")"
+  let pretty (pre,post,det) =
+        putStrLn (pre ++ "|" ++ post ++ " " ++ prettyDet det)
+  mapM_ pretty [(pre,post,det) |
+   (n,p) <- zip [0..] ps,
+   let (pre,post) = splitAt n str,
+   det <- epsilon p]
+  
