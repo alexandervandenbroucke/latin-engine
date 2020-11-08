@@ -1,6 +1,6 @@
 {- |
 
-Module:      UI.Sentence
+Module:      UI.SentenceEditor
 Description: A widget for editing forests of parse trees of a sentence.
 Maintainer:  alexander.vandenbroucke@gmail.com
 
@@ -65,7 +65,9 @@ editorWidget (Editor sentence forest) =
         | word@(S.Word _ text) <- S.toWords sentence ]
       width = ctx^.availWidthL
       splitted = S.splitLines width len pairs
-      renderPair (text,status) = padRight (Pad 1) (txt text <=> txt status)
+      
       renderLine :: [(T.Text,T.Text)] -> Widget n
-      renderLine line = padRight Max $ hBox (map renderPair line)
+      renderLine line = padRight Max $ hBox (map renderPair line) where
+        renderPair (text,status) = padRight (Pad 1) (txt text <=> txt status)
+
   render (vBox $ map renderLine splitted)
