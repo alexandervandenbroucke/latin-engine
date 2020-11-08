@@ -20,6 +20,7 @@ executable interactive
   main-is:             Main.hs
   hs-source-dirs:      ui/, app/
   other-modules:       UI,
+                       UI.DeterminationEditor,
                        UI.SentenceEditor,
                        UI.MiniBuffer,
                        UI.IDIndexedEditor

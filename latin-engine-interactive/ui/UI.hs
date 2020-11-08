@@ -22,11 +22,12 @@ import qualified Data.Paragraph as P
 import qualified Data.Sentence as S
 import           Data.Sentence.Serialise as SerialiseS
 import           Lens.Micro
+import qualified UI.DeterminationEditor as DE
 import qualified UI.IDIndexedEditor as ID
 import qualified UI.MiniBuffer as MB
 import qualified UI.SentenceEditor as SE
 
-data Name = MB | PAR | ANN deriving (Eq,Ord,Show)
+data Name = MB | PAR | ANN | DET S.Word deriving (Eq,Ord,Show)
 
 -------------------------------------------------------------------------------
 -- UIState and Lenses
@@ -80,7 +81,7 @@ displayIOError :: E.IOException -> String
 displayIOError e = "Error: " ++ E.displayException e
 
 initState :: FilePath -> UIState
-initState filePath = UIState filePath Z.empty MB.abort PAR where
+initState filePath = UIState filePath Z.empty MB.abort PAR
 
 loadParagraph :: (MonadIO m, MonadError String m) => FilePath -> m [SE.Editor]
 loadParagraph filePath =
@@ -172,7 +173,7 @@ sentenceWidget text = txtWrap (T.map explicitNewline text) where
   explicitNewline '\n' = '\8617'
   explicitNewline c = c
 
-paragraphWidget :: UIState -> Widget Name
+paragraphWidget :: UIState -> Widget n
 paragraphWidget uiState =
   let attr
         | uiState^.focusedL == PAR = focusedBorderAttr
@@ -180,17 +181,24 @@ paragraphWidget uiState =
       parBorder = withAttr attr (hBorderWithLabel (str "[Paragraph]"))
       inits = withAttr unFocusedParagraphAttr $ sentenceWidget $ P.toText $
         uiState^.editorsL.to (Z.toList . init)^..each.senL.SE.sentenceL
-      sentence =
-        let go widget
-              | uiState^.focusedL == PAR = widget
-              | otherwise = withAttr unFocusedParagraphAttr widget
-        in go $ padTopBottom 1 $
-           maybe emptyWidget SE.editorWidget $ uiState^?sentenceL
+      widget = padTopBottom 1 $
+        maybe emptyWidget SE.editorWidget (uiState^?sentenceL)
+      sentence
+        | uiState^.focusedL == PAR = widget
+        | otherwise = withAttr unFocusedParagraphAttr widget
       tails = withAttr unFocusedParagraphAttr $ sentenceWidget $ P.toText $
         uiState^.editorsL.to (Z.toList . tail)^..each.senL.SE.sentenceL
+
   in parBorder <=> inits <=> sentence <=> tails
 
-annotationWidget :: UIState -> Widget Name
+determinationWidget :: S.Word -> T.Text -> Widget n
+determinationWidget word hint =
+  let detBorder = withAttr focusedBorderAttr $ hBorderWithLabel $
+        hBox [str "[", txt (S.wordText word),str "]"]
+      widget = DE.determinationWidget word hint
+  in detBorder <=> padBottom Max widget
+
+annotationWidget :: UIState -> Widget n
 annotationWidget uiState =
   let attr
         | uiState^.focusedL == ANN = focusedBorderAttr
@@ -206,18 +214,29 @@ annotationWidget uiState =
               ID.editorWidgetMultiAttr ID.unFocusedAttr headers editor
   in annBorder <=> padBottom Max widget
 
+lowerPane :: UIState -> Widget n
+lowerPane uiState
+  | DET word <- uiState^.focusedL =
+      let hint = maybe "" id $
+            uiState^?annotationL.ID.valueL (S.wordId word)._Just._last
+      in determinationWidget word hint 
+  | otherwise = annotationWidget uiState
+
 allWidgets :: UIState -> Widget Name
 allWidgets uiState =
   paragraphWidget uiState
   <=>
-  annotationWidget uiState
+  lowerPane uiState
   <=>
   hBorder
   <=>
   (if MB.isDone (uiState^.minibufferL) then
-     str "R)oot C)hild E)rase S)ave F)ocus A)nnotate U)nannotate Q)uit"
+     str "R)oot C)hild E)rase S)ave F)ocus A)nnotate U)nannotate D)etermine Q)uit"
     else
      MB.miniBufferWidget (uiState^.minibufferL))
+
+allLayers :: UIState -> [Widget Name]
+allLayers = pure . allWidgets
 
 -------------------------------------------------------------------------------
 -- Event handling
@@ -229,6 +248,7 @@ safeWordNr n sentence
       MB.message "Invalid word number. Hit Enter to continue."
       MB.abort
 
+-- | Set the minibuffer state
 updateMiniBuffer
   :: UIState -> MB.MiniBuffer Name (UIState -> UIState) -> UIState
 updateMiniBuffer uiState (MB.Return f)  = f uiState
@@ -273,11 +293,14 @@ handleKeyEvent key modifiers uiState
       PAR -> uiState & editorsL %~ Z.left
       ANN -> uiState & annotationL %~ ID.prev
       MB  -> uiState
+      DET{} -> uiState -- for now
   | Vty.KDown <- key, [] <- modifiers = return $ case uiState^.focusedL of
       PAR | not (Z.endp (uiState^.editorsL)) ->
             uiState & editorsL %~ Z.right
       ANN ->
         uiState & annotationL %~ ID.next
+      DET{} ->
+        uiState
       _ ->
         uiState
   | Vty.KChar c <- key = handleCharEvent c uiState
@@ -287,7 +310,8 @@ handleKeyEvent key modifiers uiState
 handleCharEvent :: MonadIO m => Char -> UIState -> m UIState
 handleCharEvent c uiState
   | 'f' <- c
-  = let swap MB  = MB
+  = let swap (DET w) = (DET w)
+        swap MB  = MB
         swap PAR = if uiState^?annotationL == Nothing then PAR else ANN
         swap ANN = PAR
     in return (uiState & focusedL %~ swap)
@@ -301,6 +325,16 @@ handleCharEvent c uiState
     in do
       result <- liftIO $ E.try $ saveEditors (uiState^.filePathL) uiState
       return (uiState & minibufferL .~ mb result)
+  | 'd' <- c, Just editors <- uiState^.editorL
+  = return $ updateMiniBuffer uiState $ do
+      wordId <- MB.promptNatural MB "determine (C-g to cancel): "
+      word <- safeWordNr wordId (editors^.senL.SE.sentenceL)
+      let focus = uiState^.focusedL
+      let mb = do
+            MB.message "Press RETURN to continue."
+            -- reset focus            
+            return (set focusedL focus . set minibufferL MB.abort)
+      return (set focusedL (DET word) . set minibufferL mb)
   | Just editors <- uiState^.editorL
   = return $ updateMiniBuffer uiState $ do
       editors' <- handleEditorEvent editors (uiState^.focusedL) c
@@ -355,7 +389,7 @@ unFocusedParagraphAttr = "unfocused-paragraph"
 
 app :: App UIState () Name
 app = App {
-  appDraw = pure . allWidgets,
+  appDraw = allLayers,
   appChooseCursor = const (showCursorNamed MB),
   appHandleEvent = handleEvent,
   appStartEvent = return,
@@ -373,6 +407,11 @@ app = App {
             (focusedBorderAttr,
               Vty.defAttr),
             (unFocusedBorderAttr,
-              fg gray)]
+              fg gray),
+            (DE.unparsedAttr,
+              fg Vty.red),
+            (DE.parsedAttr,
+             fg Vty.green)]
+
   in const $ attrMap Vty.defAttr attrs
 }
