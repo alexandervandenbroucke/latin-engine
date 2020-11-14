@@ -275,11 +275,11 @@ handleAnnotation n editors = do
 -- | Handle events
 handleEvent :: UIState -> BrickEvent Name () -> EventM Name (Next UIState)
 handleEvent uiState (VtyEvent (Vty.EvKey Vty.KEsc [])) = halt uiState
-handleEvent uiState (VtyEvent (Vty.EvKey (Vty.KChar 'q') [])) = halt uiState
 handleEvent uiState evt
   | mb <- uiState^.minibufferL, not (MB.isDone mb) =
       -- This handler forwards key events to the minibuffer.      
       MB.handleMiniBufferEvent mb evt >>= continue . updateMiniBuffer uiState
+handleEvent uiState (VtyEvent (Vty.EvKey (Vty.KChar 'q') [])) = halt uiState
 handleEvent uiState (VtyEvent (Vty.EvKey key modifiers)) =
   -- Other key events do not halt, and are delegated to another function.
   handleKeyEvent key modifiers uiState >>= continue
