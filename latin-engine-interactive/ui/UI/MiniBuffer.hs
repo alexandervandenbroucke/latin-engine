@@ -13,7 +13,14 @@ user: a minibuffer can be one of four things:
 
 1. @'Return' x@: the script has completed, with a result @x@.
 
-2. 'Done': no script has been run, or the script has run to completion.
+   Completed script can be extend with monadic bind '>>='.
+
+2. 'Done': The script is terminated.
+   After a script is 'Done', no further actions are performed in the script.
+
+   In particular:
+
+   prop> Done >> mb == Done
 
 3. @'Message' msg mb@: the script is currently displaying a message @msg@,
    after the message has been acknowledged, the script moves to a new state

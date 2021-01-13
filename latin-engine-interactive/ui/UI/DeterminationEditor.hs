@@ -4,6 +4,16 @@ Module:      UI.DeterminationEditor
 Description: A widget for displaying determinations of a word
 Maintainer:  alexander.vandenbroucke@gmail.com
 
+A determination widget shows a list of possible declensions or
+conjugations for a particular word.
+
+The set of possible declensions or conjugations can be limited by providing
+a hint: a string of the format @< nom, gen@, where @nom@ and @gen@ are the
+nominative and genitive of the word respectively.
+
+This may be useful so see all possible grammatical explanations for a word
+while translating.
+
 -}
 
 {-# LANGUAGE OverloadedStrings #-}
@@ -65,13 +75,6 @@ inflectedAttr :: AttrName
 inflectedAttr = editAttr <> "unparsed"
 
 -- | Create a new determination widget.
---
--- A determination widget contains a list of possible declensions or
--- conjugations for a particular word.
---
--- The set of possible declensions or conjugations can be limited by providing
--- a hint: a string of the format @< nom, gen@, where @nom@ and @gen@ are the
--- nominative and genitive of the word respectively.
 determinationWidget
   :: S.Word  -- ^ Word to determine
   -> T.Text  -- ^ The hint for the word
