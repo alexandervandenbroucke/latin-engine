@@ -160,7 +160,7 @@ loadEditors filePath = W.runWriterT $ do
 
     return editors
 
-
+-- | Save editors to a file.
 saveEditors :: FilePath -> [Editors] -> IO ()
 saveEditors filePath editors = do
   SerialiseF.writeForests (filePath -<.> "fst.json") $
@@ -168,16 +168,6 @@ saveEditors filePath editors = do
 
   SerialiseS.writeFile (filePath -<.> "ann.json") $
     editors^..each.annL.to ID.dropColumn
-
--- | Return all elements in the zipper to the left of the cursor
-init :: Z.Zipper a -> Z.Zipper a
-init (Z.Zip [] _) = Z.Zip [] []
-init (Z.Zip (x:xs) _) = Z.Zip xs [x]
-
--- | Return all elements in the zipper to the right of the cursor
-tail :: Z.Zipper a -> Z.Zipper a
-tail (Z.Zip _ []) = Z.Zip [] []
-tail (Z.Zip _ (_:xs)) = Z.Zip [] xs
 
 
 -------------------------------------------------------------------------------
@@ -260,15 +250,6 @@ allWidgets uiState =
 -------------------------------------------------------------------------------
 -- Event handling
 
-safeWordNr :: Int -> S.Sentence -> MB.MiniBuffer Name S.Word
-safeWordNr n sentence
-  | Just x <- S.wordNr n sentence
-  = return x
-  | otherwise
-  = do
-      MB.message "Invalid word number. Hit Enter to continue."
-      MB.abort
-
 -- | Set the minibuffer state
 updateMiniBuffer
   :: UIState -> MB.MiniBuffer Name UIState -> UIState
@@ -276,9 +257,9 @@ updateMiniBuffer _ (MB.Return uiState)  = uiState
 updateMiniBuffer uiState mb = uiState & minibufferL .~ mb
 
 -- | Display the annotation prompt
-handleAnnotation
+annotationPrompt
   :: S.WordId -> Editors -> MB.MiniBuffer Name Editors
-handleAnnotation n editors = do
+annotationPrompt n editors = do
   w <- safeWordNr n (editors^.senL.SE.sentenceL)
   let wStr = T.unpack (S.wordText w)
   let msg = "annotate " ++ wStr ++ " [" ++ show n ++ "] (C-g to cancel): "
@@ -428,13 +409,13 @@ handleEditorEvent editors focused c
   | 'a' <- c, ANN <- focused,
     n <- editors^.annL.ID.focusL,
     Just{} <- S.wordNr n (editors^.senL.SE.sentenceL)
-  = handleAnnotation n editors
+  = annotationPrompt n editors
 
   -- * add annotation (annotation pane not focused)
   | 'a' <- c
   = do
       n <- MB.promptNatural MB "annotate (C-g to cancel): "
-      handleAnnotation n editors
+      annotationPrompt n editors
 
   -- * remove annotation (annotation pane focused)
   | 'u' <- c, ANN <- focused
@@ -453,6 +434,9 @@ handleEditorEvent editors focused c
   | otherwise
   = MB.abort
 
+-------------------------------------------------------------------------------
+-- App instance & Utilities
+
 focusedBorderAttr :: AttrName
 focusedBorderAttr = "focused-border"
 
@@ -461,6 +445,25 @@ unFocusedBorderAttr = "unfocused-border"
 
 unFocusedParagraphAttr :: AttrName
 unFocusedParagraphAttr = "unfocused-paragraph"
+
+-- | Return all elements in the zipper to the left of the cursor
+init :: Z.Zipper a -> Z.Zipper a
+init (Z.Zip [] _) = Z.Zip [] []
+init (Z.Zip (x:xs) _) = Z.Zip xs [x]
+
+-- | Return all elements in the zipper to the right of the cursor
+tail :: Z.Zipper a -> Z.Zipper a
+tail (Z.Zip _ []) = Z.Zip [] []
+tail (Z.Zip _ (_:xs)) = Z.Zip [] xs
+
+-- | Look up a word in a sentence, or set a minibuffer error message if the
+-- word id is out of bounds.
+safeWordNr :: Int -> S.Sentence -> MB.MiniBuffer Name S.Word
+safeWordNr n sentence
+  | Just x <- S.wordNr n sentence
+  = return x
+  | otherwise
+  = MB.message "Invalid word number. Hit Enter to continue." >> MB.abort
 
 app :: App UIState () Name
 app = App {
