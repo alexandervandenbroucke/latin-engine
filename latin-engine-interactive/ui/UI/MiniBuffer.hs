@@ -1,4 +1,4 @@
-{- | 
+{- |
 
 Module:      UI.MiniBuffer
 Description: A mini-buffer widget.
@@ -100,7 +100,7 @@ instance Applicative (MiniBuffer n) where
 instance Monad (MiniBuffer n) where
   return = Return
   Return a >>= f = f a
-  Prompt fil editor msg k >>= f = Prompt fil editor msg (\x -> k x >>= f)
+  Prompt accept editor msg k >>= f = Prompt accept editor msg (\x -> k x >>= f)
   Message msg k >>= f = Message msg (k >>= f)
   Done >>= _ = Done
 
@@ -182,24 +182,42 @@ miniBufferWidget Done = emptyWidget
 -- The minibuffer responds to the following keys, in addition to the inputs
 -- supported by 'E.Editor':
 --
--- ENTER: acknowledge message/confirm input.
+-- @ENTER@: acknowledge message/confirm input.
 --
--- CONTROL + G: abort
+-- @CONTROL + G@: abort
 handleMiniBufferEvent
   :: MiniBuffer n a -> BrickEvent n () -> EventM n (MiniBuffer n a)
-handleMiniBufferEvent _ (VtyEvent (V.EvKey (V.KChar 'g') [V.MCtrl])) =
-  return abort
-handleMiniBufferEvent (Message _ k) evt
-  | VtyEvent (V.EvKey V.KEnter []) <- evt = return k
-handleMiniBufferEvent (Prompt fil e msg k) evt
-  | VtyEvent (V.EvKey (V.KChar c) []) <- evt, fil c = do
+
+-- * Handle abort
+handleMiniBufferEvent _ (VtyEvent (V.EvKey (V.KChar 'g') [V.MCtrl]))
+  = return abort
+
+-- * Handle 'Message' minibuffer
+handleMiniBufferEvent (Message _ mb) evt
+  | VtyEvent (V.EvKey V.KEnter []) <- evt
+  = return mb
+
+-- * Handle 'Prompt' minibuffer
+handleMiniBufferEvent (Prompt accept e msg k) evt
+  -- ** Pass a character to the editor widget
+  | VtyEvent (V.EvKey (V.KChar c) []) <- evt, accept c
+  = do
       e' <- E.handleEditorEvent (V.EvKey (V.KChar c) []) e
-      return (Prompt fil e' msg k)
-  | VtyEvent (V.EvKey (V.KChar _) []) <- evt =
-      return (Prompt fil e msg k)
-  | VtyEvent (V.EvKey V.KEnter []) <- evt =
-      return $ k $ T.unpack $ mconcat $ E.getEditContents $ e
-  | VtyEvent vtyEvent <- evt = do
+      return (Prompt accept e' msg k)
+
+  -- ** Ignore unacceptable characters
+  | VtyEvent (V.EvKey (V.KChar _) []) <- evt
+  = return (Prompt accept e msg k)
+
+  -- ** Accept input when Enter is pressed.
+  | VtyEvent (V.EvKey V.KEnter []) <- evt
+  = return $ k $ T.unpack $ mconcat $ E.getEditContents $ e
+
+  -- ** Pass other VtyEvents to the editor widget.
+  | VtyEvent vtyEvent <- evt
+  = do
       e' <- E.handleEditorEvent vtyEvent e
-      return (Prompt fil e' msg k)
+      return (Prompt accept e' msg k)
+
+-- * Catch all clause
 handleMiniBufferEvent mb _ = return mb
