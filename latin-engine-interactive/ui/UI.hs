@@ -94,8 +94,10 @@ initState filePath = do
       uiState & minibufferL .~ (MB.message e >> MB.abort)
     Right (editors, warnings) ->
       let minibuffer
-            | null warnings = MB.message ("Loaded " ++ filePath) >> MB.abort
-            | otherwise = mapM MB.message warnings >> MB.abort
+            | null warnings
+            = MB.message ("Loaded " ++ filePath) >> MB.abort
+            | otherwise
+            = mapM MB.message warnings >> MB.abort
       in uiState & editorsL .~ Z.fromList editors & minibufferL .~ minibuffer
 
 loadParagraph :: (MonadIO m, MonadError String m) => FilePath -> m [SE.Editor]
@@ -190,16 +192,20 @@ sentenceWidget text = txtWrap (T.map explicitNewline text) where
 paragraphWidget :: UIState -> Widget n
 paragraphWidget uiState =
   let attr
-        | uiState^.focusedL == PAR = focusedBorderAttr
-        | otherwise = unFocusedBorderAttr
+        | uiState^.focusedL == PAR
+        = focusedBorderAttr
+        | otherwise
+        = unFocusedBorderAttr
       parBorder = withAttr attr (hBorderWithLabel (str "[Paragraph]"))
       inits = withAttr unFocusedParagraphAttr $ sentenceWidget $ P.toText $
         uiState^.editorsL.to (Z.toList . init)^..each.senL.SE.sentenceL
       widget = padTopBottom 1 $
         maybe emptyWidget SE.editorWidget (uiState^?sentenceL)
       sentence
-        | uiState^.focusedL == PAR = widget
-        | otherwise = withAttr unFocusedParagraphAttr widget
+        | uiState^.focusedL == PAR
+        = widget
+        | otherwise
+        = withAttr unFocusedParagraphAttr widget
       tails = withAttr unFocusedParagraphAttr $ sentenceWidget $ P.toText $
         uiState^.editorsL.to (Z.toList . tail)^..each.senL.SE.sentenceL
 
@@ -215,8 +221,10 @@ determinationWidget word hint =
 annotationWidget :: UIState -> Widget n
 annotationWidget uiState =
   let attr
-        | uiState^.focusedL == ANN = focusedBorderAttr
-        | otherwise = unFocusedBorderAttr
+        | uiState^.focusedL == ANN
+        = focusedBorderAttr
+        | otherwise
+        = unFocusedBorderAttr
       annBorder = withAttr attr (hBorderWithLabel (str "[Annotation]"))
       headers = [T.pack "ID", T.pack "Word", T.pack "Annotation"]
       widget = case uiState^?annotationL of
@@ -230,11 +238,12 @@ annotationWidget uiState =
 
 lowerPane :: UIState -> Widget n
 lowerPane uiState
-  | DET word <- uiState^.focusedL =
-      let hint = maybe "" id $
-            uiState^?annotationL.ID.valueL (S.wordId word)._Just._last
-      in determinationWidget word hint 
-  | otherwise = annotationWidget uiState
+  | DET word <- uiState^.focusedL
+  = let hint = maybe "" id $
+          uiState^?annotationL.ID.valueL (S.wordId word)._Just._last
+    in determinationWidget word hint
+  | otherwise
+  = annotationWidget uiState
 
 allWidgets :: UIState -> Widget Name
 allWidgets uiState =
@@ -257,8 +266,10 @@ allLayers = pure . allWidgets
 
 safeWordNr :: Int -> S.Sentence -> MB.MiniBuffer Name S.Word
 safeWordNr n sentence
-  | Just x <- S.wordNr n sentence  = return x
-  | otherwise = do
+  | Just x <- S.wordNr n sentence
+  = return x
+  | otherwise
+  = do
       MB.message "Invalid word number. Hit Enter to continue."
       MB.abort
 
@@ -276,39 +287,56 @@ handleAnnotation n editors = do
   let wStr = T.unpack (S.wordText w)
   let msg = "annotate " ++ wStr ++ " [" ++ show n ++ "] (C-g to cancel): "
   let promptForAnnotation
-        | Just [_,ann] <- editors^.annL.ID.valueL n =
-            MB.promptPrimitive MB (const True) msg (T.unpack ann)
-        | otherwise =
-            MB.promptString MB msg
+        | Just [_,ann] <- editors^.annL.ID.valueL n
+        = MB.promptPrimitive MB (const True) msg (T.unpack ann)
+        | otherwise
+        = MB.promptString MB msg
   annotation <- promptForAnnotation
   case annotation of
     "" -> MB.message "Error: empty annotation." >> MB.abort
     _  -> return $
           editors & annL.ID.valueL n ?~ [S.wordText w,T.pack annotation]
 
+
 -- | Handle events
 handleEvent :: UIState -> BrickEvent Name () -> EventM Name (Next UIState)
-handleEvent uiState (VtyEvent (Vty.EvKey Vty.KEsc [])) = halt uiState
-handleEvent uiState evt
-  | mb <- uiState^.minibufferL, not (MB.isDone mb) =
-      -- This handler forwards key events to the minibuffer.      
-      MB.handleMiniBufferEvent mb evt >>= continue . updateMiniBuffer uiState
-handleEvent uiState (VtyEvent (Vty.EvKey (Vty.KChar 'q') [])) = halt uiState
-handleEvent uiState (VtyEvent (Vty.EvKey key modifiers)) =
-  -- Other key events do not halt, and are delegated to another function.
-  handleKeyEvent key modifiers uiState >>= continue
-handleEvent uiState _ = continue uiState -- default catch-all case
+
+handleEvent uiState event = case event of
+  -- * 'ESC' key always halts
+  VtyEvent (Vty.EvKey Vty.KEsc []) -> halt uiState
+
+  -- * This handler forwards key events to the minibuffer.
+  _ | mb <- uiState^.minibufferL, not (MB.isDone mb) ->
+        MB.handleMiniBufferEvent mb event
+        >>= continue . updateMiniBuffer uiState
+
+  -- * 'q' key halts
+  VtyEvent (Vty.EvKey (Vty.KChar 'q') []) ->
+    halt uiState
+
+  -- * Other key events do not halt, and are delegated to another function.
+  VtyEvent (Vty.EvKey key modifiers) ->
+    handleKeyEvent key modifiers uiState >>= continue
+
+  -- * Default catch-all clause
+  _ -> continue uiState
+
 
 -- | Handle keypress events that cannot halt.
 handleKeyEvent
   :: MonadIO m => Vty.Key -> [Vty.Modifier] -> UIState -> m UIState
 handleKeyEvent key modifiers uiState
-  | Vty.KUp <- key, [] <- modifiers = return $ case uiState^.focusedL of
+  -- * Focus previous element
+  | Vty.KUp <- key, [] <- modifiers
+  = return $ case uiState^.focusedL of
       PAR -> uiState & editorsL %~ Z.left
       ANN -> uiState & annotationL %~ ID.prev
       MB  -> uiState
       DET{} -> uiState -- for now
-  | Vty.KDown <- key, [] <- modifiers = return $ case uiState^.focusedL of
+
+  -- * Focus next element
+  | Vty.KDown <- key, [] <- modifiers
+  = return $ case uiState^.focusedL of
       PAR | not (Z.endp (uiState^.editorsL)) ->
             uiState & editorsL %~ Z.right
       ANN ->
@@ -317,18 +345,27 @@ handleKeyEvent key modifiers uiState
         uiState
       _ ->
         uiState
-  | Vty.KChar c <- key = handleCharEvent c uiState
-  | otherwise = return uiState
+
+  -- * Forward Char key event
+  | Vty.KChar c <- key
+  = handleCharEvent c uiState
+
+  -- * Catch all clause
+  | otherwise
+  = return uiState
 
 -- | Handle keypress events that correspond to a character key.
 handleCharEvent :: MonadIO m => Char -> UIState -> m UIState
 handleCharEvent c uiState
+  -- * Swap focus
   | 'f' <- c
   = let swap (DET w) = (DET w)
         swap MB  = MB
         swap PAR = if uiState^?annotationL == Nothing then PAR else ANN
         swap ANN = PAR
     in return (uiState & focusedL %~ swap)
+
+  -- * Save editor state
   | 's' <- c
   = let mb (Left e) = do
           MB.message ("Error: " ++ E.displayException (e :: E.IOException))
@@ -340,6 +377,8 @@ handleCharEvent c uiState
       result <- liftIO $ E.try $ saveEditors (uiState^.filePathL) $
         uiState^.editorsL.to Z.toList
       return (uiState & minibufferL .~ mb result)
+
+  -- * Handle determination prompt
   | 'd' <- c, Just editors <- uiState^.editorL
   = return $ updateMiniBuffer uiState $ do
       wordId <- MB.promptNatural MB "determine (C-g to cancel): "
@@ -347,13 +386,17 @@ handleCharEvent c uiState
       let focus = uiState^.focusedL
       let mb = do
             MB.message "Press RETURN to continue."
-            -- reset focus            
+            -- reset focus
             return (set focusedL focus . set minibufferL MB.abort)
       return (set focusedL (DET word) . set minibufferL mb)
+
+  -- * Handle editor events
   | Just editors <- uiState^.editorL
   = return $ updateMiniBuffer uiState $ do
       editors' <- handleEditorEvent editors (uiState^.focusedL) c
       return (\s -> s & editorL ?~ editors' & minibufferL .~ MB.abort)
+
+  -- * catch all case
   | otherwise = return uiState
 
 -- | Handle commands to the editor.
@@ -361,37 +404,58 @@ handleCharEvent c uiState
 -- These events can only affect the editor state, through a minibuffer.
 handleEditorEvent :: Editors -> Name -> Char -> MB.MiniBuffer Name Editors
 handleEditorEvent editors focused c
-  | 'r' <- c = do
+  -- * set root
+  | 'r' <- c
+  = do
       root <- MB.promptNatural MB "root (C-g to cancel): "
       _ <- safeWordNr root (editors^.senL.SE.sentenceL)
       return (editors & senL.SE.forestL %~ F.setRoot root)
-  | 'c' <- c = do
+
+  -- * set child
+  | 'c' <- c
+  = do
       child <- MB.promptNatural MB "child (C-g to cancel): "
       _ <- safeWordNr child (editors^.senL.SE.sentenceL)
       parent <- MB.promptNatural MB $
         "child  " ++ show child ++ " of (C-g to cancel): "
       _ <- safeWordNr parent (editors^.senL.SE.sentenceL)
       return (editors & senL.SE.forestL %~ F.addChild child parent)
-  | 'e' <- c = do
+
+  -- * erase (unset status)
+  | 'e' <- c
+  = do
       n <- MB.promptNatural MB "erase (C-g to cancel): "
       _ <- safeWordNr n (editors^.senL.SE.sentenceL)
       return (editors & senL.SE.forestL %~ F.clear n)
+
+  -- * add annotation (annotation pane focused)
   | 'a' <- c, ANN <- focused,
     n <- editors^.annL.ID.focusL,
-    Just{} <- S.wordNr n (editors^.senL.SE.sentenceL) =
-      handleAnnotation n editors
-  | 'a' <- c = do
+    Just{} <- S.wordNr n (editors^.senL.SE.sentenceL)
+  = handleAnnotation n editors
+
+  -- * add annotation (annotation pane not focused)
+  | 'a' <- c
+  = do
       n <- MB.promptNatural MB "annotate (C-g to cancel): "
       handleAnnotation n editors
-  | 'u' <- c, ANN <- focused = do
-      return (editors & annL.ID.valueL (editors^.annL.ID.focusL) .~ Nothing)
-  | 'u' <- c = do
+
+  -- * remove annotation (annotation pane focused)
+  | 'u' <- c, ANN <- focused
+  = return (editors & annL.ID.valueL (editors^.annL.ID.focusL) .~ Nothing)
+
+  -- * remove annotation (annotation pane not focused)
+  | 'u' <- c
+  = do
       n <- MB.promptNatural MB "unannotate (C-g to cancel): "
       _ <- safeWordNr n (editors^.senL.SE.sentenceL)
       case editors^.annL.ID.valueL n of
         Nothing -> MB.message "Error: no such annotation." >> MB.abort
         Just{} -> return (editors & annL.ID.valueL n .~ Nothing)
-  | otherwise = MB.abort
+
+  -- * catch all case
+  | otherwise
+  = MB.abort
 
 focusedBorderAttr :: AttrName
 focusedBorderAttr = "focused-border"
