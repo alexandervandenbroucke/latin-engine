@@ -408,9 +408,9 @@ app = App {
               Vty.defAttr),
             (unFocusedBorderAttr,
               fg gray),
-            (DE.unparsedAttr,
+            (DE.stemAttr,
               fg Vty.red),
-            (DE.parsedAttr,
+            (DE.inflectedAttr,
              fg Vty.green)]
 
   in const $ attrMap Vty.defAttr attrs

@@ -11,8 +11,8 @@ Maintainer:  alexander.vandenbroucke@gmail.com
 module UI.DeterminationEditor (
   determinationWidget,
   editAttr,
-  parsedAttr,
-  unparsedAttr)
+  stemAttr,
+  inflectedAttr)
 where
 
 import           Brick
@@ -23,6 +23,12 @@ import qualified Data.Text as T
 import           Language.Latin
 import qualified Language.Parser as P
 
+-- | Parse a word as far as possible.
+--
+-- The result is a list of triples @(stem,infl,det)@ such that each @stem@
+-- is a prefix of the word, @post@ is a recognised inflection on the word, and
+-- @det@ is the corresponding declension.
+--
 partial :: T.Text -> [(T.Text,T.Text,Determination)]
 partial rawText =
   let text = trim rawText
@@ -35,6 +41,7 @@ partial rawText =
        let (pre,post) = T.splitAt n text,
        det <- P.epsilon p]
 
+-- | Use the hint to guess the declension of a word.
 parseHint :: T.Text -> [Declension]
 parseHint hint =
   let det = T.dropWhile (/= '<') hint
@@ -45,16 +52,30 @@ parseHint hint =
          in L.intersect detNom detGen
        _ -> [I,II,III,IV,V]
 
+-- | Attribute name of this widget.
 editAttr :: AttrName
 editAttr = "determination-editor"
 
-parsedAttr :: AttrName
-parsedAttr = editAttr <> "parsed"
+-- | Attribute name of text that is a stem part of the input word.
+stemAttr :: AttrName
+stemAttr = editAttr <> "parsed"
 
-unparsedAttr :: AttrName
-unparsedAttr = editAttr <> "unparsed"
+-- | Attribute name of text that is an inflected part of the input word.
+inflectedAttr :: AttrName
+inflectedAttr = editAttr <> "unparsed"
 
-determinationWidget :: S.Word -> T.Text -> Widget n
+-- | Create a new determination widget.
+--
+-- A determination widget contains a list of possible declensions or
+-- conjugations for a particular word.
+--
+-- The set of possible declensions or conjugations can be limited by providing
+-- a hint: a string of the format @< nom, gen@, where @nom@ and @gen@ are the
+-- nominative and genitive of the word respectively.
+determinationWidget
+  :: S.Word  -- ^ Word to determine
+  -> T.Text  -- ^ The hint for the word
+  -> Widget n
 determinationWidget word hint = vBox (map widget $ filt $ partial text) where
   text = S.wordText word
   decls = parseHint hint
@@ -62,6 +83,14 @@ determinationWidget word hint = vBox (map widget $ filt $ partial text) where
   detWidget (Determination d c m g) = str $
     L.intercalate ", " [show c,show m,show g] ++ " (" ++ show d ++ ")"
   txtWidget pre post =
-    withAttr unparsedAttr (txt pre) <+> withAttr parsedAttr (txt post)
+    withAttr stemAttr (txt pre) <+> withAttr inflectedAttr (txt post)
   widget (pre,post,det) =
     txtWidget pre post <+> padLeft (Pad 1) (detWidget det)
+  {- The end result looks like this:
+  +---+----+ +---+
+  |pre|post| |det|
+  +---+----+ +---+
+  red green  black
+
+  or whatever colours are chosen for unparsedAttr and parsedAttr
+  -}
