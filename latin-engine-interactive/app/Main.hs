@@ -9,7 +9,7 @@ main = do
   progName <- getProgName
   case args of
     [] -> putStrLn ("usage: " ++ progName ++ " filename")
-    (filePath:_) -> loadEditors filePath >>= defaultMain app >> return ()
+    (filePath:_) -> initState filePath >>= defaultMain app >> return ()
 
 
 -- Local Variables:

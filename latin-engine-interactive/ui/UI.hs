@@ -80,8 +80,23 @@ focusedL = lens uiFocused (\e name -> e{uiFocused = name})
 displayIOError :: E.IOException -> String
 displayIOError e = "Error: " ++ E.displayException e
 
-initState :: FilePath -> UIState
-initState filePath = UIState filePath Z.empty MB.abort PAR
+-- | Empty ui state: no files loaded.
+emptyState :: FilePath -> UIState
+emptyState filePath = UIState filePath Z.empty MB.abort PAR
+
+-- | Create a ui state by loading a file.
+initState :: FilePath -> IO UIState
+initState filePath = do
+  let uiState = emptyState filePath
+  eResult <- runExceptT (loadEditors filePath)
+  return $ case eResult of
+    Left e ->
+      uiState & minibufferL .~ (MB.message e >> MB.abort)
+    Right (editors, warnings) ->
+      let minibuffer
+            | null warnings = MB.message ("Loaded " ++ filePath) >> MB.abort
+            | otherwise = mapM MB.message warnings >> MB.abort
+      in uiState & editorsL .~ Z.fromList editors & minibufferL .~ minibuffer
 
 loadParagraph :: (MonadIO m, MonadError String m) => FilePath -> m [SE.Editor]
 loadParagraph filePath =
@@ -120,9 +135,16 @@ loadAnnotations paragraph filePath = do
            -- IntMap.
   zipWithM withWords paragraph annotations
 
-loadEditors :: FilePath -> IO UIState
-loadEditors filePath = do
-  eUIState <- runExceptT $ W.runWriterT $ do
+-- | Load editors from file.
+--
+-- Throws an exception if the source file cannot be read.
+--
+-- The result is a list of editors and a (potentially empty) list of warnings.
+-- Warnings can be generated if the forest or annotation file is missing.
+loadEditors
+  :: (MonadError String m, MonadIO m)
+  => FilePath -> m ([Editors],[String])
+loadEditors filePath = W.runWriterT $ do
     sentences <- loadParagraph filePath
     let paragraph = sentences^..each.SE.sentenceL
 
@@ -135,24 +157,16 @@ loadEditors filePath = do
     let editors = zipWith3 makeEditors sentences forests annotations where
           makeEditors se f ann = (se & SE.forestL .~ f, ann)
 
-    return (initState filePath & editorsL .~ Z.fromList editors)
-  return $ case eUIState of
-    Left e ->
-      initState filePath & minibufferL .~ (MB.message e >> MB.abort)
-    Right (uiState, warnings) ->
-      let minibuffer
-            | null warnings = MB.message ("Loaded " ++ filePath) >> MB.abort
-            | otherwise = mapM MB.message warnings >> MB.abort
-      in uiState & minibufferL .~ minibuffer
+    return editors
 
 
-saveEditors :: FilePath -> UIState -> IO ()
-saveEditors filePath uiState  = do
+saveEditors :: FilePath -> [Editors] -> IO ()
+saveEditors filePath editors = do
   SerialiseF.writeForests (filePath -<.> "fst.json") $
-    uiState^.editorsL.to Z.toList^..each.senL.SE.forestL
-  SerialiseS.writeFile (filePath -<.> "ann.json") $
-    uiState^.editorsL.to Z.toList^..each.annL.to ID.dropColumn
+    editors^..each.senL.SE.forestL
 
+  SerialiseS.writeFile (filePath -<.> "ann.json") $
+    editors^..each.annL.to ID.dropColumn
 
 -- | Return all elements in the zipper to the left of the cursor
 init :: Z.Zipper a -> Z.Zipper a
@@ -323,7 +337,8 @@ handleCharEvent c uiState
           MB.message ("Saved to " ++ uiState^.filePathL ++ ".")
           MB.abort
     in do
-      result <- liftIO $ E.try $ saveEditors (uiState^.filePathL) uiState
+      result <- liftIO $ E.try $ saveEditors (uiState^.filePathL) $
+        uiState^.editorsL.to Z.toList
       return (uiState & minibufferL .~ mb result)
   | 'd' <- c, Just editors <- uiState^.editorL
   = return $ updateMiniBuffer uiState $ do
