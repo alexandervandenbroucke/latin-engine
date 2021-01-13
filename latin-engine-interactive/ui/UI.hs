@@ -324,7 +324,7 @@ handleKeyEvent key modifiers uiState
         uiState
 
   -- * Forward Char key event
-  | Vty.KChar c <- key
+  | Vty.KChar c <- key, [] <- modifiers
   = handleCharEvent c uiState
 
   -- * Catch all clause
