@@ -37,7 +37,7 @@ type Editors = (SE.Editor, ID.Editor [T.Text])
 data UIState = UIState {
   uiFilePath   :: FilePath,
   uiEditors    :: Z.Zipper Editors,
-  uiMinibuffer :: MB.MiniBuffer Name (UIState -> UIState),
+  uiMinibuffer :: MB.MiniBuffer Name UIState,
   uiFocused    :: Name
 }
 
@@ -67,8 +67,7 @@ sentenceL = editorL._Just.senL
 annotationL :: Traversal' UIState (ID.Editor [T.Text])
 annotationL = editorL._Just.annL
 
-minibufferL
-  :: Lens' UIState (MB.MiniBuffer Name (UIState -> UIState))
+minibufferL :: Lens' UIState (MB.MiniBuffer Name UIState)
 minibufferL = lens uiMinibuffer (\e mb -> e{uiMinibuffer = mb})
 
 focusedL :: Lens' UIState Name
@@ -258,9 +257,6 @@ allWidgets uiState =
     else
      MB.miniBufferWidget (uiState^.minibufferL))
 
-allLayers :: UIState -> [Widget Name]
-allLayers = pure . allWidgets
-
 -------------------------------------------------------------------------------
 -- Event handling
 
@@ -275,8 +271,8 @@ safeWordNr n sentence
 
 -- | Set the minibuffer state
 updateMiniBuffer
-  :: UIState -> MB.MiniBuffer Name (UIState -> UIState) -> UIState
-updateMiniBuffer uiState (MB.Return f)  = f uiState
+  :: UIState -> MB.MiniBuffer Name UIState -> UIState
+updateMiniBuffer _ (MB.Return uiState)  = uiState
 updateMiniBuffer uiState mb = uiState & minibufferL .~ mb
 
 -- | Display the annotation prompt
@@ -387,14 +383,14 @@ handleCharEvent c uiState
       let mb = do
             MB.message "Press RETURN to continue."
             -- reset focus
-            return (set focusedL focus . set minibufferL MB.abort)
-      return (set focusedL (DET word) . set minibufferL mb)
+            return (uiState & focusedL .~ focus)
+      return (uiState & focusedL .~ DET word & minibufferL .~ mb)
 
   -- * Handle editor events
   | Just editors <- uiState^.editorL
   = return $ updateMiniBuffer uiState $ do
       editors' <- handleEditorEvent editors (uiState^.focusedL) c
-      return (\s -> s & editorL ?~ editors' & minibufferL .~ MB.abort)
+      return (uiState & editorL ?~ editors')
 
   -- * catch all case
   | otherwise = return uiState
@@ -468,7 +464,7 @@ unFocusedParagraphAttr = "unfocused-paragraph"
 
 app :: App UIState () Name
 app = App {
-  appDraw = allLayers,
+  appDraw = pure . allWidgets,
   appChooseCursor = const (showCursorNamed MB),
   appHandleEvent = handleEvent,
   appStartEvent = return,
