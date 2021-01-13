@@ -148,7 +148,8 @@ editorWidgetUnfocused = editorWidgetAttr unFocusedAttr
 -- e.g., use 'focusedAttr' or 'unFocusedAttr'.
 editorWidgetAttr :: AttrName -> (a -> String) -> Editor a -> Widget n
 editorWidgetAttr attr _ editor
-  | editor^.valuesL.to null = withAttr attr (str "No Annotations")
+  | editor^.valuesL.to null
+  = withAttr attr (str "No Annotations")
 editorWidgetAttr attr shew editor =
   let maxWidth = maximum $
         map length ("ID":(editor^.valuesL.to M.toList^..each._1.to show))
@@ -156,8 +157,10 @@ editorWidgetAttr attr shew editor =
       pad n s = s ++ replicate (n - length s) ' '
       line (n,v) = padRight Max $ str $ padToMaxWidth (show n) ++ " " ++ shew v
       lineWidget (n,v)
-        | n == editor^.focusL = withAttr (attr <> lineAttr) (line (n,v))
-        | otherwise           = withAttr attr (line (n,v))
+        | n == editor^.focusL
+        = withAttr (attr <> lineAttr) (line (n,v))
+        | otherwise
+        = withAttr attr (line (n,v))
       header = padRight Max $ str $ padToMaxWidth "ID" ++ " Annotation"
   in vBox (header:map lineWidget (editor^.valuesL.to M.toAscList))
 
@@ -172,22 +175,21 @@ editorWidgetMultiAttr
   -> Editor [T.Text] -- ^ The editor
   -> Widget n
 editorWidgetMultiAttr attr headers editor
-  | editor^.valuesL.to null = withAttr attr (str "No Annotations")
-  | otherwise = vBox (headerRow : zipWith row ids idRows) where
+  | editor^.valuesL.to null
+  = withAttr attr (str "No Annotations")
+  | otherwise
+  = vBox (headerRow : zipWith row ids idRows) where
       (ids,rows) = unzip (editor^.valuesL.to M.toAscList)
       idcolumn = map (T.pack . show) ids
       idRows = zipWith (:) idcolumn rows
       columns = transpose idRows
       widths = map (maximum . map T.length) (zipWith (:) headers columns)
       headerRow = hBox (zipWith cell widths headers)
-      row n cells
-        | n == editor^.focusL =
-            withAttr (attr <> lineAttr) $ padRight Max $
-            hBox $ zipWith cell widths cells
-        | otherwise =
-            withAttr attr $ padRight Max $ hBox $ zipWith cell widths cells
-      cell n = padRight (Pad 1) . str . pad n . T.unpack
-      pad n s = s ++ replicate (n - length s) ' '
+      row n cells =
+        let attr' = attr <> if n == editor^.focusL then lineAttr else mempty
+        in withAttr attr' $ padRight Max $ hBox $ zipWith cell widths cells
+      cell n t = padRight (Pad padding) (txt t) where
+        padding = max 0 (n - T.length t) + 1
 
 instance SerialiseS.ToWordIdMap (Editor a) where
   type Dst (Editor a) = a
