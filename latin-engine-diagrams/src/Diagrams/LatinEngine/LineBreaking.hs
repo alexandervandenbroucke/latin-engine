@@ -117,9 +117,8 @@ extend
   -> Int       -- ^ the demerit of the line formed by breaking the sentence
                --   that remains after the previous 'Candidate' at the new
                --   breakpoint
-               --   the new candidate
   -> Candidate -- ^ the previous 'Candidate'.
-  -> Candidate
+  -> Candidate -- ^ the new candidate
 extend word demerit prev = Candidate (demerit + totalDemerit prev) word prev
 
 -- | The chain created by following this Candidate backwards.
