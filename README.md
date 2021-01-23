@@ -23,11 +23,11 @@ forest to pdf, using colourful arcs to show the sentence structure.
 serialisation format for parse-tree forests and annotations.
 
 
-![](interactive-screenshot.jpg)
+![](https://github.com/alexandervandenbroucke/latin-engine/blob/master/interactive-screenshot.png?raw=true)
 The `latin-engine-interactive` application being used on the first paragraph
 of Caesar's Comentarii de Bello Gallico.
 
-![](diagram-screenshot.jpg)
+![](https://github.com/alexandervandenbroucke/latin-engine/blob/master/diagram-screenshot.png?raw=true)
 The output generated for the same text by `latin-engine-diagrams`.
 
 
