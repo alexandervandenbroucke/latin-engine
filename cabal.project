@@ -1,4 +1,4 @@
 packages: */*.cabal
 
 package diagrams
-  flags: rasterific
+  flags: +rasterific

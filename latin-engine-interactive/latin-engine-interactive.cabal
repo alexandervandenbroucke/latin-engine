@@ -25,12 +25,12 @@ executable interactive
                        UI.MiniBuffer,
                        UI.IDIndexedEditor
   -- other-extensions:
-  build-depends:       base ^>=4.11.1.0,
+  build-depends:       base >=4.11.1.0 && < 4.15,
                        latin-engine-core,
                        latin-engine-json,
                        text ^>=1.2.3.1,
-                       vty ^>= 5.28.2,
-                       brick ^>= 0.52.1,
+                       vty >= 5.28.2 && < 5.34,
+                       brick >= 0.52.1 && < 0.65,
                        microlens ^>= 0.4.11,
                        ListZipper ^>= 1.2.0.2,
                        transformers ^>= 0.5.6,

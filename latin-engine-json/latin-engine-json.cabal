@@ -20,7 +20,7 @@ library
   hs-source-dirs:      src/
   exposed-modules:     Data.Forest.Serialise,
                        Data.Sentence.Serialise
-  build-depends:       base ^>=4.11.1.0,
+  build-depends:       base >=4.11.1.0 &&  < 4.15,
                        aeson ^>=  1.5.2,
                        text ^>=1.2.3.1,
                        containers ^>= 0.6.2,
