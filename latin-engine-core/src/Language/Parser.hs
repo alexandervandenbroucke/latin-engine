@@ -96,6 +96,9 @@ instance Functor Parser where
   fmap f (pa :<> pb) = fmap f pa <> fmap f pb
   fmap f (Symbols cs) = symbols cs .> eps (f ())
 
+-- | The semigroup implements union.
+--
+-- L (a <> b) = L(a) U L(b)
 instance Semigroup (Parser a) where
   Empty <> p = p
   p <> Empty = p
@@ -107,45 +110,61 @@ instance Monoid (Parser a) where
   mappend = (<>)
 
 -- | The parser of the empty language.
+--
+-- @L(empty) = {}@
 empty :: Parser a
 empty = Empty
 
 -- | A parser that accepts the empty string, and returns a result.
+--
+-- @L(eps) = { "" }@
 eps :: a -> Parser a
 eps = Eps
 
 -- | A parser that accepts a string.
+--
+-- @L(string w) = { w }@
 string :: String -> Parser ()
 string = foldr (.>) (eps ()) . map (symbols . pure)
 
 -- | A parser that accepts a text.
+--
+-- @L(text w) = { T.unpack w }
 text :: T.Text -> Parser ()
 text = string . T.unpack
 
 -- | Concatenate two parsers.
 --
--- The language of the concatenation consists of all concatenations of strings
--- in the first language with all those of the second language.
+-- The language of the concatenation consists of the concatenations of all
+-- strings in the first language with all those of the second language.
 --
 -- The result of the second parser is returned.
+--
+-- L(a #> b) = { wu | w in L(a), u in L(b) }
 (#>) :: Parser b -> Parser a -> Parser a
 pb #> pa = fmap (const ()) pb .> pa
 
 -- | Concatenate two parsers.
 --
--- The language of the concatenation consists of all concatenations of strings
--- in the first language with all those of the second language.
+-- The language of the concatenation consists of the concatenations of all
+-- strings in the first language with all those of the second language.
 --
 -- The result of the first parser is returned.
+--
+-- L(a <# b) = { wu | w in L(a), u in L(b) }
 (<#) :: Parser a -> Parser b -> Parser a
 pa <# pb = pa <. fmap (const ()) pb
 
 -- | Concatentate two parsers.
 --
--- The language of the concatenation consists of all concatenations of strings
+-- The language of the concatenation consists of concatenations of all strings
 -- in the first language with all those of the second language.
 --
 -- The result of the second parser is returned
+--
+-- L(a .> b) = { wu | w in L(a), u in L(b) }
+--
+-- This version enforces right associativity.
 (.>) :: Parser () -> Parser a -> Parser a
 Eps{} .> p = p
 Empty .> _ = empty
@@ -155,10 +174,15 @@ pa .> pb = pa :.> pb
 
 -- | Concatentate two parsers.
 --
--- The language of the concatenation consists of all concatenations of strings
+-- The language of the concatenation consists of concatenations of all strings
 -- in the first language with all those of the second language.
 --
 -- The result of the first parser is returned
+--
+-- L(a <. b) = { wu | w in L(a), u in L(b) }
+--
+-- This version enforces right associativity.
+--
 (<.) :: Parser a -> Parser () -> Parser a
 p <. Eps{} = p
 Empty <. _ = empty
@@ -220,6 +244,10 @@ epsilon (pa :<> pf) = epsilon pa <> epsilon pf
 epsilon Symbols{} = []
 epsilon Empty = []
 
+-- | Check if a parser accepts the empty string (epsilon)
+nullable :: Parser a -> Bool
+nullable = not . null . epsilon
+
 -- | Brozozowski derivative
 derivative :: Parser a -> Char -> Parser a
 derivative Eps{} _ =
@@ -227,7 +255,7 @@ derivative Eps{} _ =
 derivative Empty _ =
   Empty
 derivative (pa :.> pb) c
-  | [] <- epsilon pa = derivative pa c #> pb
+  | not (nullable pa) = derivative pa c #> pb
   | otherwise = (derivative pa c #> pb) <> derivative pb c
 derivative (pa :<. pb) c
   | xs <- epsilon pa, not (null xs) =
