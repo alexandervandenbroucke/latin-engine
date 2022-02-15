@@ -7,7 +7,6 @@ module UI (app,initState,loadEditors) where
 import           Brick
 import           Brick.Widgets.Border
 import qualified Control.Exception as E
-import qualified Control.Exception as E ()
 import           Control.Monad.Except
 import qualified Control.Monad.Writer as W
 import qualified Data.List.Zipper as Z
@@ -18,6 +17,7 @@ import           System.FilePath ((-<.>))
 
 import qualified Data.Forest as F
 import qualified Data.Forest.Serialise as SerialiseF
+import           Data.Maybe (fromMaybe, isNothing)
 import qualified Data.Paragraph as P
 import qualified Data.Sentence as S
 import           Data.Sentence.Serialise as SerialiseS
@@ -96,7 +96,7 @@ initState filePath = do
             | null warnings
             = MB.message ("Loaded " ++ filePath) >> MB.abort
             | otherwise
-            = mapM MB.message warnings >> MB.abort
+            = mapM_ MB.message warnings >> MB.abort
       in uiState & editorsL .~ Z.fromList editors & minibufferL .~ minibuffer
 
 loadParagraph :: (MonadIO m, MonadError String m) => FilePath -> m [SE.Editor]
@@ -228,7 +228,7 @@ annotationWidget uiState =
 lowerPane :: UIState -> Widget n
 lowerPane uiState
   | DET word <- uiState^.focusedL
-  = let hint = maybe "" id $
+  = let hint = fromMaybe "" $
           uiState^?annotationL.ID.valueL (S.wordId word)._Just._last
     in determinationWidget word hint
   | otherwise
@@ -336,9 +336,9 @@ handleCharEvent :: MonadIO m => Char -> UIState -> m UIState
 handleCharEvent c uiState
   -- * Swap focus
   | 'f' <- c
-  = let swap (DET w) = (DET w)
+  = let swap (DET w) = DET w
         swap MB  = MB
-        swap PAR = if uiState^?annotationL == Nothing then PAR else ANN
+        swap PAR = if isNothing (uiState^?annotationL) then PAR else ANN
         swap ANN = PAR
     in return (uiState & focusedL %~ swap)
 

@@ -76,7 +76,7 @@ module UI.MiniBuffer (
 
 import           Brick
 import qualified Brick.Widgets.Edit as E
-import           Control.Monad (ap)
+import           Control.Monad (ap, (>=>))
 import           Data.Char (isNumber)
 import qualified Data.Text as T
 import qualified Graphics.Vty as V
@@ -100,7 +100,7 @@ instance Applicative (MiniBuffer n) where
 instance Monad (MiniBuffer n) where
   return = Return
   Return a >>= f = f a
-  Prompt accept editor msg k >>= f = Prompt accept editor msg (\x -> k x >>= f)
+  Prompt accept editor msg k >>= f = Prompt accept editor msg (k >=> f)
   Message msg k >>= f = Message msg (k >>= f)
   Done >>= _ = Done
 
@@ -211,7 +211,7 @@ handleMiniBufferEvent (Prompt accept e msg k) evt
 
   -- ** Accept input when Enter is pressed.
   | VtyEvent (V.EvKey V.KEnter []) <- evt
-  = return $ k $ T.unpack $ mconcat $ E.getEditContents $ e
+  = return $ k $ T.unpack $ mconcat $ E.getEditContents e
 
   -- ** Pass other VtyEvents to the editor widget.
   | VtyEvent vtyEvent <- evt

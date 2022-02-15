@@ -18,8 +18,6 @@ Operations: request focused value, focus next/prev, delete value, add a value
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
 
 module UI.IDIndexedEditor (
@@ -41,7 +39,6 @@ module UI.IDIndexedEditor (
 
 
 import           Brick
-import           Brick.AttrMap (AttrName)
 import qualified Data.IntMap as M
 import           Data.List (transpose)
 import qualified Data.Text as T

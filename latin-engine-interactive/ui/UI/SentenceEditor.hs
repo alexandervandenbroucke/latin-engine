@@ -38,7 +38,7 @@ forestL = lens editorForest (\e f -> e{editorForest = f})
 
 -- | Make an editor.
 makeEditor :: S.Sentence -> F.Forest -> Editor
-makeEditor sentence forest = Editor sentence forest
+makeEditor = Editor
 
 -- | Combine make an editor from a sentence and assume the forest is empty.
 makeEmptyEditor :: S.Sentence -> Editor
