@@ -6,11 +6,15 @@ Maintainer:  alexander.vandenbroucke@gmail.com
 
 -}
 
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE OverloadedStrings #-}
+
 module UI.SentenceEditor (
   -- * Editor State
   Editor(..),
-  sentenceL, forestL,
+  sentenceL, forestL, selectedL,
   makeEditor,
+  selectedAttr,
   -- * Editor Widget
   makeEmptyEditor,
   editorWidget
@@ -25,7 +29,8 @@ import           Control.Lens
 -- | An editor is a 'S.Sentence' and its corresponding parse tree 'F.Forest'.
 data Editor = Editor {
   editorSentence :: S.Sentence,
-  editorForest   :: F.Forest
+  editorForest   :: F.Forest,
+  editorSelected :: Maybe S.Word
 } deriving Show
 
 -- | Lens to the 'Editor''s 'S.Sentence'
@@ -36,9 +41,14 @@ sentenceL = lens editorSentence (\e s -> e{editorSentence = s})
 forestL :: Lens' Editor F.Forest
 forestL = lens editorForest (\e f -> e{editorForest = f})
 
+-- | Lens to the 'Editor''s selected word.
+selectedL :: Lens' Editor (Maybe S.Word)
+selectedL = lens editorSelected  (\e s -> e{editorSelected = s})
+
 -- | Make an editor.
 makeEditor :: S.Sentence -> F.Forest -> Editor
-makeEditor = Editor
+makeEditor editorSentence editorForest = Editor{..} where
+  editorSelected = Nothing
 
 -- | Combine make an editor from a sentence and assume the forest is empty.
 makeEmptyEditor :: S.Sentence -> Editor
@@ -52,22 +62,30 @@ statusText word forest | n <- S.wordId word = case forest `F.statusOf` n of
   F.Child r -> T.pack (show n ++ "C" ++ show r)
   F.Clear   -> T.pack (show n)
 
+selectedAttr :: AttrName
+selectedAttr = "sentence-editor" <> "selected-word"
+
+
 -- | Render an 'Editor'.
 editorWidget :: Editor -> Widget n
-editorWidget (Editor sentence forest) =
+editorWidget (Editor sentence forest selected) =
   cropToContext $ padRight Max $ Widget Greedy Fixed $ do
   ctx <- getContext
 
-  let len (text,status) =  max (textWidth text) (textWidth status) + 1
-      pairs :: [(T.Text,T.Text)]
+  let len (text,status,_) =  max (textWidth text) (textWidth status) + 1
+      pairs :: [(T.Text,T.Text,Widget n -> Widget n)]
       pairs =
-        [(text,statusText word forest)
-        | word@(S.Word _ text) <- S.toWords sentence ]
+        [ (text,statusText word forest,attr)
+        | word@(S.Word _ text) <- S.toWords sentence
+        , let attr
+                | Just word == selected = withAttr selectedAttr
+                | otherwise = id]
       width = ctx^.availWidthL
       splitted = S.splitLines width len pairs
       
-      renderLine :: [(T.Text,T.Text)] -> Widget n
+      renderLine :: [(T.Text,T.Text,Widget n -> Widget n)] -> Widget n
       renderLine line = padRight Max $ hBox (map renderPair line) where
-        renderPair (text,status) = padRight (Pad 1) (txt text <=> txt status)
+        renderPair (text,status,attr) =
+          padRight (Pad 1) $ attr $ txt text <=> txt status
 
   render (vBox $ map renderLine splitted)
