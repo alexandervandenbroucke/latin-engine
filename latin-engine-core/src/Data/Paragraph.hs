@@ -22,6 +22,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 
 import qualified Data.Sentence as S
+import Data.Maybe (fromMaybe)
 
 -- | A Paragraph is a 'Z.Zipper' of 'S.Sentence's.
 type Paragraph = [S.Sentence]
@@ -31,13 +32,13 @@ type Paragraph = [S.Sentence]
 fromText :: T.Text -> Paragraph
 fromText =
   filter (not . S.null)
-  . map (S.makeSentence . (<> T.pack ".") . removeTrailingNewline)
-  . T.splitOn (T.pack ". ")
+  . map S.makeSentence
+  . T.splitOn (T.pack ".")
 
 -- | Remove trailing new lines from the end of a 'T.Text'.
 removeTrailingNewline :: T.Text -> T.Text
 removeTrailingNewline sentence =
-  maybe sentence id (T.stripSuffix (T.pack "\n") sentence)
+  fromMaybe sentence (T.stripSuffix (T.pack "\n") sentence)
 
 
 -- | Turn a 'Paragraph' into text, adding the appropriate whitespaces between

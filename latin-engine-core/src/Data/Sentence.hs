@@ -52,7 +52,7 @@ null s = wordCount s == 0
 -- | Create a sentence from a 'T.Text', by splitting the text into words.
 makeSentence :: T.Text -> Sentence
 makeSentence text = Sentence (A.listArray (1,n) ws) where
-  ws = zipWith Word [1..] (T.words (removeTrailingFullStops text))
+  ws = zipWith Word [1..] $ T.words $ removeTrailingFullStops $ T.stripEnd text
   n = length ws
 
 -- | Create a sentence from a list of words.
@@ -82,7 +82,7 @@ toWords :: Sentence -> [Word]
 toWords = A.elems . unSentence
 
 -- | Turn a sentence into a 'T.Text' by concatenating all words with spaces in
--- between.
+-- between, terminated by a full stop.
 --
 -- The following property should hold for all sentences @s@
 --

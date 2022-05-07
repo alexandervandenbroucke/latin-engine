@@ -15,8 +15,6 @@ This module also provides a functions for serialising and deserialising a
 parse tree to a ".fst" file format.
 
 -}
-{-# LANGUAGE ViewPatterns  #-}
-{-# LANGUAGE TupleSections #-}
 
 module Data.Forest (
   -- * Data Types
