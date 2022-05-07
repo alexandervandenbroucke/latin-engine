@@ -42,7 +42,7 @@ import           Brick
 import qualified Data.IntMap as M
 import           Data.List (transpose)
 import qualified Data.Text as T
-import           Lens.Micro
+import           Control.Lens
 import           Text.Read (readMaybe)
 
 import           Data.Sentence (WordId)

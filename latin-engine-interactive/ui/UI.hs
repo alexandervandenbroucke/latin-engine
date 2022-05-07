@@ -20,8 +20,8 @@ import qualified Data.Forest.Serialise as SerialiseF
 import           Data.Maybe (fromMaybe, isNothing)
 import qualified Data.Paragraph as P
 import qualified Data.Sentence as S
-import           Data.Sentence.Serialise as SerialiseS
-import           Lens.Micro
+import qualified Data.Sentence.Serialise as SerialiseS
+import           Control.Lens
 import qualified UI.DeterminationEditor as DE
 import qualified UI.IDIndexedEditor as ID
 import qualified UI.MiniBuffer as MB

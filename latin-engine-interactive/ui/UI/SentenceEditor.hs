@@ -20,7 +20,7 @@ import           Brick
 import qualified Data.Forest as F
 import qualified Data.Sentence as S
 import qualified Data.Text as T
-import           Lens.Micro
+import           Control.Lens
 
 -- | An editor is a 'S.Sentence' and its corresponding parse tree 'F.Forest'.
 data Editor = Editor {
