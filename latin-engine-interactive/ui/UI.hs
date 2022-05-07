@@ -1,6 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE TupleSections #-}
+{-# OPTIONS_GHC -fno-warn-name-shadowing #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module UI (app,initState,loadEditors) where
 
@@ -73,6 +78,16 @@ minibufferL = lens uiMinibuffer (\e mb -> e{uiMinibuffer = mb})
 focusedL :: Lens' UIState Name
 focusedL = lens uiFocused (\e name -> e{uiFocused = name})
 
+-- | Set the selected word of the current editor
+setSelectedWord :: S.Word -> UIState -> UIState
+setSelectedWord word = editorL.mapped.senL.SE.selectedL ?~ word
+
+-- | Set the selected word of the current editor to the word selected
+-- in the given editor.
+resetSelectedWord :: Editors -> UIState -> UIState
+resetSelectedWord editor =
+  editorL.mapped.senL.SE.selectedL .~ editor^.senL.SE.selectedL
+
 -------------------------------------------------------------------------------
 -- State loading & saving
 
@@ -94,9 +109,15 @@ initState filePath = do
     Right (editors, warnings) ->
       let minibuffer
             | null warnings
-            = MB.message ("Loaded " ++ filePath) >> MB.abort
+            = MB.message msg >> MB.abort
             | otherwise
             = mapM_ MB.message warnings >> MB.abort
+          n = length editors
+          fileMsg = "Loaded " ++ filePath ++ " "
+          sentenceMsg
+            | n == 1    = "[1 sentence]"
+            | otherwise = "[" ++ show n ++ " sentences]"
+          msg = fileMsg ++ " " ++ sentenceMsg
       in uiState & editorsL .~ Z.fromList editors & minibufferL .~ minibuffer
 
 loadParagraph :: (MonadIO m, MonadError String m) => FilePath -> m [SE.Editor]
@@ -150,12 +171,16 @@ loadEditors filePath = W.runWriterT $ do
     let paragraph = sentences^..each.SE.sentenceL
 
     forests <- loadForests (filePath -<.> "fst.json")
-      `catchError` \e -> W.tell [e] >> return (repeat F.emptyForest)
+      `catchError` \e -> W.tell [e] >> return []
 
     annotations <- loadAnnotations paragraph (filePath -<.> "ann.json")
-      `catchError` \e -> W.tell [e] >> return (repeat ID.empty)
+      `catchError` \e -> W.tell [e] >> return []
 
-    let editors = zipWith3 makeEditors sentences forests annotations where
+    -- Assume missing forests and annotations are empty.
+    let forests' = forests ++ repeat F.emptyForest
+        annotations' = annotations ++ repeat ID.empty
+
+    let editors = zipWith3 makeEditors sentences forests' annotations' where
           makeEditors se f ann = (se & SE.forestL .~ f, ann)
 
     return editors
@@ -250,11 +275,11 @@ allWidgets uiState =
 -------------------------------------------------------------------------------
 -- Event handling
 
--- | Set the minibuffer state
-updateMiniBuffer
-  :: UIState -> MB.MiniBuffer Name UIState -> UIState
-updateMiniBuffer _ (MB.Return uiState)  = uiState
-updateMiniBuffer uiState mb = uiState & minibufferL .~ mb
+-- | Step the minibuffer state
+updateMiniBuffer :: UIState -> UIState
+updateMiniBuffer uiState
+  | MB.Return uiState <- uiState^.minibufferL = updateMiniBuffer uiState
+  | otherwise = uiState
 
 -- | Display the annotation prompt
 annotationPrompt
@@ -274,7 +299,6 @@ annotationPrompt n editors = do
     _  -> return $
           editors & annL.ID.valueL n ?~ [S.wordText w,T.pack annotation]
 
-
 -- | Handle events
 handleEvent :: UIState -> BrickEvent Name () -> EventM Name (Next UIState)
 
@@ -283,9 +307,9 @@ handleEvent uiState event = case event of
   VtyEvent (Vty.EvKey Vty.KEsc []) -> halt uiState
 
   -- * This handler forwards key events to the minibuffer.
-  _ | mb <- uiState^.minibufferL, not (MB.isDone mb) ->
-        MB.handleMiniBufferEvent mb event
-        >>= continue . updateMiniBuffer uiState
+  _ | mb <- uiState^.minibufferL, not (MB.isDone mb) -> do
+        mb' <- MB.handleMiniBufferEvent mb event
+        continue $ uiState & minibufferL .~ mb' & updateMiniBuffer
 
   -- * 'q' key halts
   VtyEvent (Vty.EvKey (Vty.KChar 'q') []) ->
@@ -344,95 +368,138 @@ handleCharEvent c uiState
 
   -- * Save editor state
   | 's' <- c
-  = let mb (Left e) = do
-          MB.message ("Error: " ++ E.displayException (e :: E.IOException))
-          MB.abort
-        mb (Right ()) = do
-          MB.message ("Saved to " ++ uiState^.filePathL ++ ".")
-          MB.abort
+  = let
     in do
       result <- liftIO $ E.try $ saveEditors (uiState^.filePathL) $
         uiState^.editorsL.to Z.toList
-      return (uiState & minibufferL .~ mb result)
+      return $ uiState
+        & minibufferL .~ do
+          case result of
+            Left e ->
+              MB.message ("Error: " ++ E.displayException (e :: E.IOException))
+            Right () ->
+              MB.message ("Saved to " ++ uiState^.filePathL ++ ".")
+          MB.abort
 
   -- * Handle determination prompt
   | 'd' <- c, Just editors <- uiState^.editorL
-  = return $ updateMiniBuffer uiState $ do
-      wordId <- MB.promptNatural MB "determine (C-g to cancel): "
-      word <- safeWordNr wordId (editors^.senL.SE.sentenceL)
-      let focus = uiState^.focusedL
-      let mb = do
+  = return $ updateMiniBuffer $ flip (set minibufferL) uiState $ do
+      word <- promptWord (editors^.senL.SE.sentenceL) "determine"
+
+      return $ uiState
+        & focusedL .~ DET word
+        & setSelectedWord word
+
+        & minibufferL .~ do
             MB.message "Press RETURN to continue."
-            -- reset focus
-            return (uiState & focusedL .~ focus)
-      return (uiState & focusedL .~ DET word & minibufferL .~ mb)
+            return $ uiState
+              & focusedL .~ uiState^.focusedL -- reset focus
+              & resetSelectedWord editors     -- reset selected sentence
 
   -- * Handle editor events
-  | Just editors <- uiState^.editorL
-  = return $ updateMiniBuffer uiState $ do
-      editors' <- handleEditorEvent editors (uiState^.focusedL) c
-      return (uiState & editorL ?~ editors')
+  | Just{} <- uiState^.editorL
+  = pure $ runEditorUpdates (handleEditorEvent (uiState^.focusedL) c) uiState
 
   -- * catch all case
   | otherwise = return uiState
 
+data EditorUpdate a
+  = Done a
+  | Update (Editors -> (Editors, MB.MiniBuffer Name (EditorUpdate a)))
+  deriving Functor
+
+instance Applicative EditorUpdate where
+  pure = return
+  (<*>) = ap
+
+instance Monad EditorUpdate where
+  return = Done
+  Done x >>= f = f x
+  Update u >>= f = Update $ \e -> let (e',mb) = u e in  (e', fmap (>>= f) mb)
+
+runEditorUpdates :: EditorUpdate a -> UIState -> UIState
+runEditorUpdates (Done _) state  = state
+runEditorUpdates (Update u) state
+  | Just e <- state^.editorL = 
+      let (e',mb) =  u e
+          s = state & editorL ?~ e'
+      in s
+         & minibufferL .~ fmap (`runEditorUpdates` s) mb
+         & updateMiniBuffer -- probably not necessary
+  | otherwise = state
+
+update :: Editors -> EditorUpdate ()
+update e = Update $ const (e, pure (pure ()))
+
+minibuffer :: MB.MiniBuffer Name a -> EditorUpdate a
+minibuffer mb = Update (, Done <$> mb)
+
+askEditors :: EditorUpdate Editors
+askEditors = Update $ \e -> (e, pure $ Done e)
+
 -- | Handle commands to the editor.
 --
 -- These events can only affect the editor state, through a minibuffer.
-handleEditorEvent :: Editors -> Name -> Char -> MB.MiniBuffer Name Editors
-handleEditorEvent editors focused c
+handleEditorEvent :: Name -> Char -> EditorUpdate ()
+handleEditorEvent focused c
   -- * set root
   | 'r' <- c
   = do
-      root <- MB.promptNatural MB "root (C-g to cancel): "
-      _ <- safeWordNr root (editors^.senL.SE.sentenceL)
-      return (editors & senL.SE.forestL %~ F.setRoot root)
+      root <- S.wordId <$> promptWord' "root"
+      askEditors >>= update . (senL.SE.forestL %~ F.setRoot root)
 
   -- * set child
   | 'c' <- c
   = do
-      child <- MB.promptNatural MB "child (C-g to cancel): "
-      _ <- safeWordNr child (editors^.senL.SE.sentenceL)
-      parent <- MB.promptNatural MB $
-        "child  " ++ show child ++ " of (C-g to cancel): "
-      _ <- safeWordNr parent (editors^.senL.SE.sentenceL)
-      return (editors & senL.SE.forestL %~ F.addChild child parent)
+      child@(S.wordId -> childId) <- promptWord' "child"
+      -- highlight the selected word
+      askEditors >>= update . (senL.SE.selectedL ?~ child)
+      parentId <- S.wordId <$> promptWord' ("child  " ++ show childId ++ " of")
+      askEditors >>= update
+        . (senL.SE.forestL %~ F.addChild childId parentId)
+        -- remove highlight
+        . (senL.SE.selectedL .~ Nothing)
 
   -- * erase (unset status)
   | 'e' <- c
   = do
-      n <- MB.promptNatural MB "erase (C-g to cancel): "
-      _ <- safeWordNr n (editors^.senL.SE.sentenceL)
-      return (editors & senL.SE.forestL %~ F.clear n)
+      wordId <- S.wordId <$> promptWord' "erase"
+      askEditors >>= update . (senL.SE.forestL %~ F.clear wordId)
 
   -- * add annotation (annotation pane focused)
-  | 'a' <- c, ANN <- focused,
-    n <- editors^.annL.ID.focusL,
-    Just{} <- S.wordNr n (editors^.senL.SE.sentenceL)
-  = annotationPrompt n editors
-
+  | 'a' <- c, ANN <- focused
+  = do
+      editors <- askEditors
+      minibuffer (annotationPrompt (editors^.annL.ID.focusL) editors) >>= update
   -- * add annotation (annotation pane not focused)
   | 'a' <- c
   = do
-      n <- MB.promptNatural MB "annotate (C-g to cancel): "
-      annotationPrompt n editors
+      word@(S.wordId -> wordId) <- promptWord' "annotate"
+      askEditors >>= update  . (senL.SE.selectedL ?~ word)
+      askEditors >>= minibuffer . annotationPrompt wordId >>= update
+      askEditors >>= update  . (senL.SE.selectedL .~ Nothing)
 
   -- * remove annotation (annotation pane focused)
   | 'u' <- c, ANN <- focused
-  = return (editors & annL.ID.valueL (editors^.annL.ID.focusL) .~ Nothing)
+  = do
+      editors <- askEditors
+      update (editors & annL.ID.valueL (editors^.annL.ID.focusL) .~ Nothing)
 
   -- * remove annotation (annotation pane not focused)
   | 'u' <- c
   = do
-      n <- MB.promptNatural MB "unannotate (C-g to cancel): "
-      _ <- safeWordNr n (editors^.senL.SE.sentenceL)
-      case editors^.annL.ID.valueL n of
-        Nothing -> MB.message "Error: no such annotation." >> MB.abort
-        Just{} -> return (editors & annL.ID.valueL n .~ Nothing)
+      wordId <- S.wordId <$> promptWord' "unannotate"
+      editors <- askEditors
+      case editors^.annL.ID.valueL wordId of
+        Nothing -> minibuffer $ MB.message "Error: no such annotation." >> MB.abort
+        Just{} ->  update $ editors & annL.ID.valueL wordId .~ Nothing
 
   -- * catch all case
   | otherwise
-  = MB.abort
+  = minibuffer MB.abort
+  where promptWord' prompt = do
+          editors <- askEditors
+          minibuffer $ promptWord (editors^.senL.SE.sentenceL) prompt
 
 -------------------------------------------------------------------------------
 -- App instance & Utilities
@@ -455,6 +522,12 @@ init (Z.Zip (x:xs) _) = Z.Zip xs [x]
 tail :: Z.Zipper a -> Z.Zipper a
 tail (Z.Zip _ []) = Z.Zip [] []
 tail (Z.Zip _ (_:xs)) = Z.Zip [] xs
+
+-- | Prompt for a word number within a sentence.
+promptWord :: S.Sentence -> String -> MB.MiniBuffer Name S.Word
+promptWord sentence prompt = do
+  wordId <- MB.promptNatural MB (prompt <> "(C-g to cancel): ")
+  safeWordNr wordId sentence
 
 -- | Look up a word in a sentence, or set a minibuffer error message if the
 -- word id is out of bounds.
@@ -489,7 +562,9 @@ app = App {
             (DE.stemAttr,
               fg Vty.red),
             (DE.inflectedAttr,
-             fg Vty.green)]
+             fg Vty.green),
+            (SE.selectedAttr,
+              gray `on` Vty.white)]
 
   in const $ attrMap Vty.defAttr attrs
 }
