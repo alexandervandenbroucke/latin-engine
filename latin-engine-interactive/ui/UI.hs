@@ -277,9 +277,10 @@ allWidgets uiState =
 
 -- | Step the minibuffer state
 updateMiniBuffer :: UIState -> UIState
-updateMiniBuffer uiState
-  | MB.Return uiState <- uiState^.minibufferL = updateMiniBuffer uiState
-  | otherwise = uiState
+updateMiniBuffer uiState = case uiState^.minibufferL of
+  MB.Return uiState -> updateMiniBuffer uiState
+  MB.Done -> uiState & sentenceL.SE.selectedL .~ Nothing
+  _ -> uiState
 
 -- | Display the annotation prompt
 annotationPrompt
@@ -420,12 +421,12 @@ instance Monad EditorUpdate where
 runEditorUpdates :: EditorUpdate a -> UIState -> UIState
 runEditorUpdates (Done _) state  = state
 runEditorUpdates (Update u) state
-  | Just e <- state^.editorL = 
+  | Just e <- state^.editorL =
       let (e',mb) =  u e
           s = state & editorL ?~ e'
       in s
          & minibufferL .~ fmap (`runEditorUpdates` s) mb
-         & updateMiniBuffer -- probably not necessary
+         & updateMiniBuffer
   | otherwise = state
 
 update :: Editors -> EditorUpdate ()
