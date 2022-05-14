@@ -203,25 +203,25 @@ sentenceWidget text = txtWrap (T.map explicitNewline text) where
   explicitNewline '\n' = '\8617'
   explicitNewline c = c
 
-paragraphWidget :: UIState -> Widget n
-paragraphWidget uiState =
+paragraphWidget :: Name -> Z.Zipper Editors -> Widget n
+paragraphWidget focus editors =
   let attr
-        | uiState^.focusedL == PAR
+        | focus == PAR
         = focusedBorderAttr
         | otherwise
         = unFocusedBorderAttr
       parBorder = withAttr attr (hBorderWithLabel (str "[Paragraph]"))
       inits = withAttr unFocusedParagraphAttr $ sentenceWidget $ P.toText $
-        uiState^.editorsL.to (Z.toList . init)^..each.senL.SE.sentenceL
+        init editors^.to Z.toList^..each.senL.SE.sentenceL
       widget = padTopBottom 1 $
-        maybe emptyWidget SE.editorWidget (uiState^?sentenceL)
+        maybe emptyWidget SE.editorWidget (editors^?safeCursorL._Just.senL)
       sentence
-        | uiState^.focusedL == PAR
+        | focus == PAR
         = widget
         | otherwise
         = withAttr unFocusedParagraphAttr widget
       tails = withAttr unFocusedParagraphAttr $ sentenceWidget $ P.toText $
-        uiState^.editorsL.to (Z.toList . tail)^..each.senL.SE.sentenceL
+        tail editors^.to Z.toList^..each.senL.SE.sentenceL
 
   in parBorder <=> inits <=> sentence <=> tails
 
@@ -232,38 +232,38 @@ determinationWidget word hint =
       widget = DE.determinationWidget word hint
   in detBorder <=> padBottom Max widget
 
-annotationWidget :: UIState -> Widget n
-annotationWidget uiState =
+annotationWidget :: Name -> Maybe (ID.Editor [T.Text]) -> Widget n
+annotationWidget focus annotation =
   let attr
-        | uiState^.focusedL == ANN
+        | focus == ANN
         = focusedBorderAttr
         | otherwise
         = unFocusedBorderAttr
       annBorder = withAttr attr (hBorderWithLabel (str "[Annotation]"))
       headers = [T.pack "ID", T.pack "Word", T.pack "Annotation"]
-      widget = case uiState^?annotationL of
+      widget = case annotation of
         Nothing -> ID.editorWidgetUnfocused T.unpack ID.empty
         Just editor
-          | uiState^.focusedL == ANN ->
+          | focus == ANN ->
               ID.editorWidgetMultiAttr ID.focusedAttr headers editor
           | otherwise ->
               ID.editorWidgetMultiAttr ID.unFocusedAttr headers editor
   in annBorder <=> padBottom Max widget
 
-lowerPane :: UIState -> Widget n
-lowerPane uiState
-  | DET word <- uiState^.focusedL
+lowerPane :: Name -> Maybe (ID.Editor [T.Text]) -> Widget n
+lowerPane focus annotation
+  | DET word <- focus
   = let hint = fromMaybe "" $
-          uiState^?annotationL.ID.valueL (S.wordId word)._Just._last
+          annotation^?_Just.ID.valueL (S.wordId word)._Just._last
     in determinationWidget word hint
   | otherwise
-  = annotationWidget uiState
+  = annotationWidget focus annotation
 
 allWidgets :: UIState -> Widget Name
 allWidgets uiState =
-  paragraphWidget uiState
+  paragraphWidget (uiState^.focusedL) (uiState^.editorsL)
   <=>
-  lowerPane uiState
+  lowerPane (uiState^.focusedL) (uiState^?annotationL)
   <=>
   hBorder
   <=>
