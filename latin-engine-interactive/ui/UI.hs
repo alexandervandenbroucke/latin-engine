@@ -78,16 +78,6 @@ minibufferL = lens uiMinibuffer (\e mb -> e{uiMinibuffer = mb})
 focusedL :: Lens' UIState Name
 focusedL = lens uiFocused (\e name -> e{uiFocused = name})
 
--- | Set the selected word of the current editor
-setSelectedWord :: S.Word -> UIState -> UIState
-setSelectedWord word = editorL.mapped.senL.SE.selectedL ?~ word
-
--- | Set the selected word of the current editor to the word selected
--- in the given editor.
-resetSelectedWord :: Editors -> UIState -> UIState
-resetSelectedWord editor =
-  editorL.mapped.senL.SE.selectedL .~ editor^.senL.SE.selectedL
-
 -------------------------------------------------------------------------------
 -- State loading & saving
 
@@ -385,17 +375,23 @@ handleCharEvent c uiState
   -- * Handle determination prompt
   | 'd' <- c, Just editors <- uiState^.editorL
   = return $ updateMiniBuffer $ flip (set minibufferL) uiState $ do
-      word <- promptWord (editors^.senL.SE.sentenceL) "determine"
+      word <- case uiState^.focusedL of
+        ANN
+          | Just focus <- uiState^?annotationL.ID.focusL
+          , Just sentence <- uiState^?sentenceL.SE.sentenceL
+          , Just word <- S.wordNr focus sentence ->
+              pure word
+        _ -> promptWord (editors^.senL.SE.sentenceL) "determine"
 
       return $ uiState
         & focusedL .~ DET word
-        & setSelectedWord word
+        & sentenceL.SE.selectedL ?~ word
 
         & minibufferL .~ do
             MB.message "Press RETURN to continue."
             return $ uiState
-              & focusedL .~ uiState^.focusedL -- reset focus
-              & resetSelectedWord editors     -- reset selected sentence
+              & focusedL .~ uiState^.focusedL     -- reset focus
+              & sentenceL.SE.selectedL .~ Nothing -- reset selected word
 
   -- * Handle editor events
   | Just{} <- uiState^.editorL

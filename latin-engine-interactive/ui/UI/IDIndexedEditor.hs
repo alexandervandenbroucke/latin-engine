@@ -194,8 +194,12 @@ instance SerialiseS.ToWordIdMap (Editor a) where
 
 instance SerialiseS.FromWordIdMap (Editor a) where
   type Src (Editor a) = a
-  fromWordIdMap m = setv <$> fromWordIdMap m where
-    setv v = empty & valuesL .~ v
+  fromWordIdMap m = do
+    v <- fromWordIdMap m
+    pure $
+      empty
+      & valuesL .~ v
+      & focusL .~ maybe 0 fst (M.lookupMin v)
 
 {-# DEPRECATED serialise, deserialise
     "Use package latin-engine-json instead" #-}
@@ -206,5 +210,9 @@ serialise editor = T.pack $ show $ editor^.valuesL
 
 -- | Deserialise an 'Editor'
 deserialise :: Read a => T.Text -> Maybe (Editor a)
-deserialise text = setv <$> readMaybe (T.unpack text) where
-  setv v = empty & valuesL .~ v
+deserialise text = do
+  v <- readMaybe (T.unpack text)
+  pure $
+    empty
+    & valuesL .~ v
+    & focusL .~ maybe 0 fst (M.lookupMin v)
