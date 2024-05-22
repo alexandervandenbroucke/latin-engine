@@ -26,7 +26,7 @@ module UI.DeterminationEditor (
 where
 
 import           Brick
-import           Data.Char (isAlpha)
+import           Data.Char (isAlpha, isSpace)
 import qualified Data.List as L
 import qualified Data.Sentence as S
 import qualified Data.Text as T
@@ -54,25 +54,34 @@ partial rawText =
 -- | Use the hint to guess the declension of a word.
 parseHint :: T.Text -> [Declension]
 parseHint hint =
-  let det = T.dropWhile (/= '<') hint
+  let det =
+        T.takeWhile (/= ';') $
+        T.filter (not . isSpace) $
+        T.drop 1 $
+        T.dropWhile (/= '<') hint
   in case T.splitOn "," det of
        [nom,gen] ->
          let detNom = [d | (_,_,Determination d NOM S _) <- partial nom]
              detGen = [d | (_,_,Determination d GEN S _) <- partial gen]
          in L.intersect detNom detGen
+       [nomM,nomF,nomN] ->
+         let detM = [d | (_,_,Determination d NOM S M) <- partial nomM]
+             detF = [d | (_,_,Determination d NOM S F) <- partial nomF]
+             detN = [d | (_,_,Determination d NOM S N) <- partial nomN]
+         in L.intersect (detM `L.union` detF) detN
        _ -> [I,II,III,IV,V]
 
 -- | Attribute name of this widget.
 editAttr :: AttrName
-editAttr = "determination-editor"
+editAttr = attrName "determination-editor"
 
 -- | Attribute name of text that is a stem part of the input word.
 stemAttr :: AttrName
-stemAttr = editAttr <> "parsed"
+stemAttr = editAttr <> attrName "parsed"
 
 -- | Attribute name of text that is an inflected part of the input word.
 inflectedAttr :: AttrName
-inflectedAttr = editAttr <> "unparsed"
+inflectedAttr = editAttr <> attrName "unparsed"
 
 -- | Create a new determination widget.
 determinationWidget

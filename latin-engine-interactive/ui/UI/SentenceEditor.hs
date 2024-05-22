@@ -63,7 +63,7 @@ statusText word forest | n <- S.wordId word = case forest `F.statusOf` n of
   F.Clear   -> T.pack (show n)
 
 selectedAttr :: AttrName
-selectedAttr = "sentence-editor" <> "selected-word"
+selectedAttr = attrName "sentence-editor" <> attrName "selected-word"
 
 
 -- | Render an 'Editor'.

@@ -109,19 +109,19 @@ addColumn newColumn editor =
 
 -- | The prefix attribute of this widget
 editAttr :: AttrName
-editAttr = "id-indexed-editor"
+editAttr = attrName "id-indexed-editor"
 
 -- | The attribute prefix when the editor has focus.
 focusedAttr :: AttrName
-focusedAttr = editAttr <> "focused"
+focusedAttr = editAttr <> attrName "focused"
 
 -- | The attribute prefix when the editor does not have focus.
 unFocusedAttr :: AttrName
-unFocusedAttr = editAttr <> "unfocused"
+unFocusedAttr = editAttr <> attrName "unfocused"
 
 -- | The attribute of the selected line
 lineAttr :: AttrName
-lineAttr = "line"
+lineAttr = attrName "line"
 
 
 -- | A widget for a focused 'Editor' that has annotations that can be show

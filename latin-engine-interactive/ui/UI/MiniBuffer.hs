@@ -59,6 +59,8 @@ can be created with 'promptPrimitive'.
 -}
 
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module UI.MiniBuffer (
   -- * Data Type
@@ -76,6 +78,7 @@ module UI.MiniBuffer (
 
 import           Brick
 import qualified Brick.Widgets.Edit as E
+import           Control.Lens (Traversal', traversal)
 import           Control.Monad (ap, (>=>))
 import           Data.Char (isNumber)
 import qualified Data.Text as T
@@ -87,22 +90,29 @@ type MBEditor = E.Editor T.Text
 
 -- | Minibuffer scripts.
 data MiniBuffer n a
-  = Return a
+  = Pure a
   | Message String (MiniBuffer n a)
   | Prompt (Char -> Bool) (MBEditor n) String (String -> MiniBuffer n a)
   | Done
   deriving Functor
 
 instance Applicative (MiniBuffer n) where
-  pure  = return
+  pure  = Pure
   (<*>) = ap
 
 instance Monad (MiniBuffer n) where
-  return = Return
-  Return a >>= f = f a
+  return = pure
+  Pure a >>= f = f a
   Prompt accept editor msg k >>= f = Prompt accept editor msg (k >=> f)
   Message msg k >>= f = Message msg (k >>= f)
   Done >>= _ = Done
+
+-- | A Traversal over the 'MBEditor' in case the 'MiniBuffer' is a 'Prompt'
+promptEditor :: Traversal' (MiniBuffer n a) (MBEditor n)
+promptEditor = traversal $ \f mb -> case mb of
+  Prompt accept editor msg k ->
+    (\editor' -> Prompt accept editor' msg k) <$> f editor
+  _ -> pure mb
 
 
 -- | Create a minibuffer displaying a single text message, returning @()@.
@@ -171,7 +181,7 @@ isDone _     = False
 
 -- | Render the minibuffer.
 miniBufferWidget :: (Show n, Ord n) => MiniBuffer n a -> Widget n
-miniBufferWidget (Return _) = emptyWidget
+miniBufferWidget (Pure _) = emptyWidget
 miniBufferWidget (Message msg _) = strWrap msg
 miniBufferWidget (Prompt _ e msg _) =
   str msg <+> E.renderEditor (txt . mconcat) True e
@@ -184,40 +194,40 @@ miniBufferWidget Done = emptyWidget
 --
 -- @ENTER@: acknowledge message/confirm input.
 --
--- @CONTROL + G@: abort
-handleMiniBufferEvent
-  :: MiniBuffer n a -> BrickEvent n () -> EventM n (MiniBuffer n a)
+-- @CONTROL + g@: abort
+handleMiniBufferEvent :: Eq n => BrickEvent n () -> EventM n (MiniBuffer n a) ()
+handleMiniBufferEvent evt = get >>= \case
+  -- Handle abort
+  _ | VtyEvent key <- evt
+    , V.EvKey (V.KChar 'g') [V.MCtrl]  <- key ->
+      put abort
+  -- Handle 'Message' minibuffer
+  Message _ mb
+    | VtyEvent key <- evt
+    , V.EvKey V.KEnter [] <- key ->
+      put mb
+  -- Handle 'Prompt' minibuffer
+  Prompt accept e _msg k
+    -- Pass a character to the editor widget  
+    | VtyEvent key <- evt
+    , V.EvKey (V.KChar c) [] <- key
+    , accept c ->
+      zoom promptEditor $ E.handleEditorEvent evt
+      
+    -- Ignore unacceptable characters
+    | VtyEvent key <- evt
+    , V.EvKey (V.KChar _) [] <- key ->
+      pure ()
+      
+    -- Accept input when Enter is pressed
+    | VtyEvent key <- evt
+    , V.EvKey V.KEnter [] <- key ->
+      put $ k $ T.unpack $ mconcat $ E.getEditContents e
 
--- * Handle abort
-handleMiniBufferEvent _ (VtyEvent (V.EvKey (V.KChar 'g') [V.MCtrl]))
-  = return abort
-
--- * Handle 'Message' minibuffer
-handleMiniBufferEvent (Message _ mb) evt
-  | VtyEvent (V.EvKey V.KEnter []) <- evt
-  = return mb
-
--- * Handle 'Prompt' minibuffer
-handleMiniBufferEvent (Prompt accept e msg k) evt
-  -- ** Pass a character to the editor widget
-  | VtyEvent (V.EvKey (V.KChar c) []) <- evt, accept c
-  = do
-      e' <- E.handleEditorEvent (V.EvKey (V.KChar c) []) e
-      return (Prompt accept e' msg k)
-
-  -- ** Ignore unacceptable characters
-  | VtyEvent (V.EvKey (V.KChar _) []) <- evt
-  = return (Prompt accept e msg k)
-
-  -- ** Accept input when Enter is pressed.
-  | VtyEvent (V.EvKey V.KEnter []) <- evt
-  = return $ k $ T.unpack $ mconcat $ E.getEditContents e
-
-  -- ** Pass other VtyEvents to the editor widget.
-  | VtyEvent vtyEvent <- evt
-  = do
-      e' <- E.handleEditorEvent vtyEvent e
-      return (Prompt accept e' msg k)
-
--- * Catch all clause
-handleMiniBufferEvent mb _ = return mb
+    -- Pass other events to the editor
+    | otherwise ->
+      zoom promptEditor $ E.handleEditorEvent evt
+      
+  -- catch all clause
+  _ -> pure ()
+      

@@ -135,10 +135,9 @@ loadAnnotations paragraph filePath = do
                 "Warning: invalid annotation file: " ++ filePath
               Just w -> return (S.wordText w)
         in editor
-           & fmap (map return)    -- Editor [m Text]
+           & fmap (map pure)      -- Editor [m Text]
            & ID.addColumn addWord -- Editor [m Text]
-           & fmap sequence        -- Editor (m [Text])
-           & sequence             -- m (Editor [Text])
+           & traverse sequenceA   -- m (Editor [Text])
            -- This complicated sequencing is necessary to thread exceptions
            -- through the ID.Editor structure. Perhaps it would be easier to
            -- simply pre-process all the keys in the Editor, and throw
@@ -268,7 +267,7 @@ allWidgets uiState =
 -- | Step the minibuffer state
 updateMiniBuffer :: UIState -> UIState
 updateMiniBuffer uiState = case uiState^.minibufferL of
-  MB.Return uiState -> updateMiniBuffer uiState
+  MB.Pure uiState -> updateMiniBuffer uiState
   MB.Done -> uiState & sentenceL.SE.selectedL .~ Nothing
   _ -> uiState
 
@@ -291,27 +290,30 @@ annotationPrompt n editors = do
           editors & annL.ID.valueL n ?~ [S.wordText w,T.pack annotation]
 
 -- | Handle events
-handleEvent :: UIState -> BrickEvent Name () -> EventM Name (Next UIState)
+handleEvent :: BrickEvent Name () -> EventM Name UIState ()
 
-handleEvent uiState event = case event of
-  -- * 'ESC' key always halts
-  VtyEvent (Vty.EvKey Vty.KEsc []) -> halt uiState
+handleEvent event = do
+  uiState <- get
+  case event of
+    -- * 'ESC' key always halts  
+    VtyEvent (Vty.EvKey Vty.KEsc []) -> halt
 
-  -- * This handler forwards key events to the minibuffer.
-  _ | mb <- uiState^.minibufferL, not (MB.isDone mb) -> do
-        mb' <- MB.handleMiniBufferEvent mb event
-        continue $ uiState & minibufferL .~ mb' & updateMiniBuffer
+    -- * This handler forwards key events to the minibuffer.
+    _ | mb <- uiState^.minibufferL, not (MB.isDone mb) -> do
+        Brick.zoom minibufferL $ do
+          MB.handleMiniBufferEvent event
+        modify updateMiniBuffer
 
-  -- * 'q' key halts
-  VtyEvent (Vty.EvKey (Vty.KChar 'q') []) ->
-    halt uiState
+    -- * 'q' key halts
+    VtyEvent (Vty.EvKey (Vty.KChar 'q') []) ->
+      halt
 
-  -- * Other key events do not halt, and are delegated to another function.
-  VtyEvent (Vty.EvKey key modifiers) ->
-    handleKeyEvent key modifiers uiState >>= continue
+    -- * Other key events do not halt, and are delegated to another function.
+    VtyEvent (Vty.EvKey key modifiers) ->
+      put =<< handleKeyEvent key modifiers =<< get
 
-  -- * Default catch-all clause
-  _ -> continue uiState
+    -- * Default catch-all clause
+    _ -> pure ()
 
 
 -- | Handle keypress events that cannot halt.
@@ -406,11 +408,11 @@ data EditorUpdate a
   deriving Functor
 
 instance Applicative EditorUpdate where
-  pure = return
+  pure = Done
   (<*>) = ap
 
 instance Monad EditorUpdate where
-  return = Done
+  return = pure
   Done x >>= f = f x
   Update u >>= f = Update $ \e -> let (e',mb) = u e in  (e', fmap (>>= f) mb)
 
@@ -502,13 +504,13 @@ handleEditorEvent focused c
 -- App instance & Utilities
 
 focusedBorderAttr :: AttrName
-focusedBorderAttr = "focused-border"
+focusedBorderAttr = attrName "focused-border"
 
 unFocusedBorderAttr :: AttrName
-unFocusedBorderAttr = "unfocused-border"
+unFocusedBorderAttr = attrName "unfocused-border"
 
 unFocusedParagraphAttr :: AttrName
-unFocusedParagraphAttr = "unfocused-paragraph"
+unFocusedParagraphAttr = attrName "unfocused-paragraph"
 
 -- | Return all elements in the zipper to the left of the cursor
 init :: Z.Zipper a -> Z.Zipper a
@@ -540,7 +542,7 @@ app = App {
   appDraw = pure . allWidgets,
   appChooseCursor = const (showCursorNamed MB),
   appHandleEvent = handleEvent,
-  appStartEvent = return,
+  appStartEvent = pure (),
   appAttrMap =
       let gray = Vty.rgbColor (20 :: Int) 20 20
           attrs = [
