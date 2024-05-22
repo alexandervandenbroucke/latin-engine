@@ -20,27 +20,27 @@ library
   hs-source-dirs:      src/
   exposed-modules:     Diagrams.LatinEngine,
                        Diagrams.LatinEngine.LineBreaking  
-  build-depends:       base ^>=4.14.1.0,
+  build-depends:       base ^>= 4.17.2.1,
                        latin-engine-core,
-                       text ^>=1.2.3.1,
-                       diagrams-core >= 1.4 && < 1.6,
-                       diagrams-lib ^>= 1.4 && < 1.6,
-                       diagrams-rasterific ^>= 1.4,
+                       text ^>= 2.1,
+                       diagrams-core,
+                       diagrams-lib,
+                       diagrams-rasterific ^>= 1.4.2.3,
                        microlens ^>= 0.4.11,
-                       containers ^>= 0.6.2                       
+                       containers ^>= 0.6.8
 
 executable render
   main-is:             Renderer.hs
   hs-source-dirs:      app/
   -- other-extensions:
-  build-depends:       base ^>=4.14.1.0,
+  build-depends:       base ^>= 4.17.2.1,
                        latin-engine-core,
                        latin-engine-diagrams,
                        latin-engine-json,
-                       text ^>=1.2.3.1,
-                       diagrams-core >= 1.4 && < 1.6,
-                       diagrams-lib >= 1.4 && < 1.6,
-                       diagrams-rasterific >= 1.4 && < 1.6,
+                       text ^>= 2.1,
+                       diagrams-core,
+                       diagrams-lib,
+                       diagrams-rasterific ^>= 1.4.2.3,
                        filepath ^>= 1.4.2,
                        optparse-applicative ^>= 0.15
   -- hs-source-dirs:
