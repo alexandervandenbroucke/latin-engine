@@ -6,6 +6,8 @@
 {-# LANGUAGE TupleSections #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiWayIf #-}
 
 module UI (app,initState,loadEditors) where
 
@@ -31,6 +33,7 @@ import qualified UI.DeterminationEditor as DE
 import qualified UI.IDIndexedEditor as ID
 import qualified UI.MiniBuffer as MB
 import qualified UI.SentenceEditor as SE
+import Control.Monad.State.Class (MonadState)
 
 data Name = MB | PAR | ANN | DET S.Word deriving (Eq,Ord,Show)
 
@@ -291,11 +294,10 @@ annotationPrompt n editors = do
 
 -- | Handle events
 handleEvent :: BrickEvent Name () -> EventM Name UIState ()
-
 handleEvent event = do
   uiState <- get
   case event of
-    -- * 'ESC' key always halts  
+    -- * 'ESC' key always halts
     VtyEvent (Vty.EvKey Vty.KEsc []) -> halt
 
     -- * This handler forwards key events to the minibuffer.
@@ -310,7 +312,7 @@ handleEvent event = do
 
     -- * Other key events do not halt, and are delegated to another function.
     VtyEvent (Vty.EvKey key modifiers) ->
-      put =<< handleKeyEvent key modifiers =<< get
+      handleKeyEvent key modifiers
 
     -- * Default catch-all clause
     _ -> pure ()
@@ -318,89 +320,96 @@ handleEvent event = do
 
 -- | Handle keypress events that cannot halt.
 handleKeyEvent
-  :: MonadIO m => Vty.Key -> [Vty.Modifier] -> UIState -> m UIState
-handleKeyEvent key modifiers uiState
-  -- * Focus previous element
-  | Vty.KUp <- key, [] <- modifiers
-  = return $ case uiState^.focusedL of
-      PAR -> uiState & editorsL %~ Z.left
-      ANN -> uiState & annotationL %~ ID.prev
-      MB  -> uiState
-      DET{} -> uiState -- for now
+  :: (MonadIO m, MonadState UIState m)
+  => Vty.Key -> [Vty.Modifier] -> m ()
+handleKeyEvent key modifiers
+  | Vty.KUp     <- key, [] <- modifiers = focusPrevious
+  | Vty.KDown   <- key, [] <- modifiers = focusNext
+  | Vty.KChar c <- key, [] <- modifiers = handleCharEvent c
+  | otherwise                           = pure ()
+  where
+    focusPrevious = modify $ \uiState ->
+      case uiState^.focusedL of
+        PAR   -> uiState & editorsL %~ Z.left
+        ANN   -> uiState & annotationL %~ ID.prev
+        MB    -> uiState
+        DET{} -> uiState -- for now
 
-  -- * Focus next element
-  | Vty.KDown <- key, [] <- modifiers
-  = return $ case uiState^.focusedL of
-      PAR | not (Z.endp (uiState^.editorsL)) ->
-            uiState & editorsL %~ Z.right
-      ANN ->
-        uiState & annotationL %~ ID.next
-      DET{} ->
-        uiState
-      _ ->
-        uiState
-
-  -- * Forward Char key event
-  | Vty.KChar c <- key, [] <- modifiers
-  = handleCharEvent c uiState
-
-  -- * Catch all clause
-  | otherwise
-  = return uiState
+    focusNext = modify $ \uiState ->
+      case uiState^.focusedL of
+        PAR | not (Z.endp (uiState^.editorsL)) ->
+                uiState & editorsL %~ Z.right
+        ANN ->
+          uiState & annotationL %~ ID.next
+        DET{} ->
+          uiState
+        _ ->
+          uiState
 
 -- | Handle keypress events that correspond to a character key.
-handleCharEvent :: MonadIO m => Char -> UIState -> m UIState
-handleCharEvent c uiState
-  -- * Swap focus
-  | 'f' <- c
-  = let swap (DET w) = DET w
-        swap MB  = MB
-        swap PAR = if isNothing (uiState^?annotationL) then PAR else ANN
-        swap ANN = PAR
-    in return (uiState & focusedL %~ swap)
+handleCharEvent :: (MonadIO m, MonadState UIState m) => Char -> m ()
+handleCharEvent c
+  | 'f' <- c  = swapFocus
+  | 's' <- c  = saveEditorState
+  | 'd' <- c  = determine
+  | otherwise = editorEvent
+  where
+    swapFocus = do
+      annotation <- gets (preview annotationL)
+      focusedL %= \case
+        DET w -> DET w
+        MB    -> MB
+        PAR
+          | isNothing annotation -> PAR
+          | otherwise            -> ANN
+        ANN -> PAR
 
-  -- * Save editor state
-  | 's' <- c
-  = let
-    in do
+    saveEditorState = do
+      uiState <- get
       result <- liftIO $ E.try $ saveEditors (uiState^.filePathL) $
         uiState^.editorsL.to Z.toList
-      return $ uiState
-        & minibufferL .~ do
-          case result of
-            Left e ->
-              MB.message ("Error: " ++ E.displayException (e :: E.IOException))
-            Right () ->
-              MB.message ("Saved to " ++ uiState^.filePathL ++ ".")
-          MB.abort
+      minibufferL .= do
+        case result of
+          Left e ->
+            MB.message ("Error: " ++ E.displayException (e :: E.IOException))
+          Right () ->
+            MB.message ("Saved to " ++ uiState^.filePathL ++ ".")
+        MB.abort
 
-  -- * Handle determination prompt
-  | 'd' <- c, Just editors <- uiState^.editorL
-  = return $ updateMiniBuffer $ flip (set minibufferL) uiState $ do
-      word <- case uiState^.focusedL of
-        ANN
-          | Just focus <- uiState^?annotationL.ID.focusL
+    determine = do
+      uiState <- get
+      minibufferL .= do
+        -- Find out which word we are determining
+        word <- if
+          | ANN           <- uiState^.focusedL
+          , Just focus    <- uiState^?annotationL.ID.focusL
           , Just sentence <- uiState^?sentenceL.SE.sentenceL
-          , Just word <- S.wordNr focus sentence ->
-              pure word
-        _ -> promptWord (editors^.senL.SE.sentenceL) "determine"
+          , Just word     <- S.wordNr focus sentence
+          -> pure $ Just word
 
-      return $ uiState
-        & focusedL .~ DET word
-        & sentenceL.SE.selectedL ?~ word
+          | Just editors <- uiState^.editorL
+          -> Just <$> promptWord (editors^.senL.SE.sentenceL) "determine"
 
-        & minibufferL .~ do
-            MB.message "Press RETURN to continue."
-            return $ uiState
-              & focusedL .~ uiState^.focusedL     -- reset focus
-              & sentenceL.SE.selectedL .~ Nothing -- reset selected word
+          | otherwise
+          -> pure Nothing
+        -- If we found a word, focus on determining it
+        case word of
+          Nothing -> pure uiState
+          Just word -> pure $ uiState
+            & focusedL .~ DET word
+            & sentenceL.SE.selectedL ?~ word
+            & minibufferL .~ do
+                MB.message "Press RETURN to continue."
+                pure $ uiState
+                  & focusedL .~ uiState^.focusedL     -- reset focus
+                  & sentenceL.SE.selectedL .~ Nothing -- reset selected word
+      -- step the minibuffer
+      modify updateMiniBuffer
 
-  -- * Handle editor events
-  | Just{} <- uiState^.editorL
-  = pure $ runEditorUpdates (handleEditorEvent (uiState^.focusedL) c) uiState
-
-  -- * catch all case
-  | otherwise = return uiState
+    editorEvent = do
+      uiState <- get
+      unless (isNothing $ uiState^.editorL) $
+        modify $ runEditorUpdates (handleEditorEvent (uiState^.focusedL) c)
 
 data EditorUpdate a
   = Done a
