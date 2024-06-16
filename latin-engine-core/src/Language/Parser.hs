@@ -54,6 +54,7 @@ import qualified Data.List as L
 import           Data.String (IsString(..))
 import qualified Data.Text as T
 import           Prelude hiding (reverse)
+import Control.Monad (void)
 
 -------------------------------------------------------------------------------
 -- Parser
@@ -66,7 +67,7 @@ data Parser a where
   (:<.) :: Parser a -> Parser () -> Parser a
   (:<>) :: Parser a -> Parser a -> Parser a
   Symbols :: [Char] -> Parser ()
-  
+
 deriving instance Eq a => Eq (Parser a)
 deriving instance Ord a => Ord (Parser a)
 
@@ -125,7 +126,7 @@ eps = Eps
 --
 -- @L(string w) = { w }@
 string :: String -> Parser ()
-string = foldr (.>) (eps ()) . map (symbols . pure)
+string = foldr ((.>) . symbols . pure) (eps ())
 
 -- | A parser that accepts a text.
 --
@@ -142,7 +143,7 @@ text = string . T.unpack
 --
 -- L(a #> b) = { wu | w in L(a), u in L(b) }
 (#>) :: Parser b -> Parser a -> Parser a
-pb #> pa = fmap (const ()) pb .> pa
+pb #> pa = void pb .> pa
 
 -- | Concatenate two parsers.
 --
@@ -153,7 +154,7 @@ pb #> pa = fmap (const ()) pb .> pa
 --
 -- L(a <# b) = { wu | w in L(a), u in L(b) }
 (<#) :: Parser a -> Parser b -> Parser a
-pa <# pb = pa <. fmap (const ()) pb
+pa <# pb = pa <. void pb
 
 -- | Concatentate two parsers.
 --
@@ -196,7 +197,7 @@ infixl 7 #>
 infixr 7 <.
 infixr 7 <#
 
-  
+
 -- | A parser accepting a single character from the list.
 symbols :: [Char] -> Parser ()
 symbols = Symbols
