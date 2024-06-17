@@ -62,11 +62,17 @@ import Control.Monad (void)
 -- | A parser representation.
 data Parser a where
   Empty :: Parser a
+  -- ^ The empty language
   Eps :: a -> Parser a
+  -- ^ The singleton language containing epsilon (the empty string)
   (:.>) :: Parser () -> Parser a -> Parser a
+  -- ^ Concatenation of languages, keep the rightmost result
   (:<.) :: Parser a -> Parser () -> Parser a
+  -- ^ Concatentation of languages, keep the leftmost result
   (:<>) :: Parser a -> Parser a -> Parser a
+  -- ^ Union of languages
   Symbols :: [Char] -> Parser ()
+  -- ^ A language consisting of strings of single characters from a given set.
 
 deriving instance Eq a => Eq (Parser a)
 deriving instance Ord a => Ord (Parser a)

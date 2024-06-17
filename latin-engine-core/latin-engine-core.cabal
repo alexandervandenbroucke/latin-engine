@@ -23,10 +23,12 @@ library
                        Data.Forest,
                        Data.Forest.Internal,
                        Language.Parser,
+                       Language.Parser.Compile,
                        Language.Latin
   build-depends:       base ^>= 4.17.2.1,
                        text ^>= 2.1,
                        array,
-                       containers ^>= 0.6.8
+                       containers ^>= 0.6.8,
+                       template-haskell
   default-language:    Haskell2010
   ghc-options:         -Wall
