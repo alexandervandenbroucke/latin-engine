@@ -93,6 +93,7 @@ import Control.Monad.Trans.Class (MonadTrans, lift)
 import Control.Monad.State.Class (MonadState)
 import qualified Control.Lens as L
 import Control.Monad.IO.Class (MonadIO (liftIO))
+import Data.Kind (Type)
 
 -- | The type of editor underlying prompts
 type MBEditor = E.Editor T.Text
@@ -136,9 +137,15 @@ instance (Monoid a, Applicative m) => Monoid (MiniBuffer n m a) where
   mempty = pure mempty
   mappend = (<>)
   
-newtype FocusedMB name (m :: * -> *) (zoomedM :: * -> * -> *) (c :: *) (a :: *) = FocusedMB {
-  getFocusedMB :: zoomedM (MiniBuffer name m c) a
-}
+newtype FocusedMB
+    name
+    (m :: Type -> Type)
+    (zoomedM :: Type -> Type -> Type)
+    (c :: Type)
+    (a :: Type)
+  = FocusedMB {
+      getFocusedMB :: zoomedM (MiniBuffer name m c) a
+  }
 
 instance Functor (zoomedM (MiniBuffer name m c)) => Functor (FocusedMB name m zoomedM c) where
   fmap f = FocusedMB . fmap f . getFocusedMB
