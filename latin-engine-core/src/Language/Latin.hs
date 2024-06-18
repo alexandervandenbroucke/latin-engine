@@ -11,9 +11,11 @@ Maintainer:  alexander.vandenbroucke@gmail.com
 
 module Language.Latin where
 
+import           Prelude hiding (reverse)
+
 import qualified Data.List as L
+import           Language.Haskell.TH.Syntax (Lift)
 import           Language.Parser
-import Language.Haskell.TH.Syntax (Lift)
 
 -------------------------------------------------------------------------------
 -- Data types for declensions
@@ -157,6 +159,13 @@ declV = mkDetermination V <$> mconcat [
   "ebus" .> case_ DAT P F,
   "ebus" .> case_ ABL P F,
   "es"   .> case_ VOC P F]
+
+allDeclensions :: Parser Determination
+allDeclensions = declI <> declII <> declIII <> declIV <> declV
+
+reverseAllDeclensions :: Parser Determination
+reverseAllDeclensions = reverse $ declI <> declII <> declIII <> declIV <> declV
+
 
 prettyParses :: [Parser Determination] -> String -> IO ()
 prettyParses ps str = do 

@@ -31,7 +31,8 @@ module Language.Parser.Compile (
   StagedStream(..),
   staged,
   firstMatch,
-  parses
+  parses,
+  partial
 )
 where
 
@@ -42,6 +43,7 @@ import           Language.Haskell.TH (CodeQ)
 import           Language.Haskell.TH.Syntax (Lift)
 import           Language.Parser (Parser(..))
 import qualified Language.Parser as P
+import qualified Data.Text as T
 
 -- | Non-deterministic Finite-State Automaton (NFA) with a single
 -- storage cell storing a value of type @a@. When it accepts it produces
@@ -149,6 +151,16 @@ instance StagedStream (P.Reverse Text) where
           Just (cs,c) -> $$(ccons [||c||] [||P.Reverse cs||])
     ||]
 
+class StagedStream stream => SplitableStream stream where
+  streamLen  :: CodeQ stream -> CodeQ Int
+  streamTake :: CodeQ Int -> CodeQ stream -> CodeQ stream
+
+instance SplitableStream (P.Reverse Text) where
+  streamLen cRev =
+    [|| T.length $ P.unReverse $$cRev ||]
+  streamTake cInt cStream =
+    [|| P.Reverse $ T.takeEnd $$cInt (P.unReverse $$cStream) ||]
+
 -- | Staged compilation of an NFA.
 staged
   :: forall a b stream
@@ -200,3 +212,32 @@ firstMatch
   :: (Lift a, StagedStream stream)
   => State Nothing a -> CodeQ stream -> CodeQ (Maybe a)
 firstMatch = staged (\_ x _ -> [|| Just $$x ||]) [|| Nothing ||]
+
+-- | Parse a word as far as possible.
+--
+-- The result is a list of triples @(prefix,suffix,x)@ such that each @prefix@
+-- is a prefix of the input, @suffix@ is a suffix of the input, and
+-- @x@ is the corresponding value returned on parsing @prefix@.
+--
+partial
+  :: forall stream a
+  .  (SplitableStream stream, Lift a)
+  => State Nothing a
+  -> CodeQ stream
+  -> CodeQ [(stream, stream, a)]
+partial parser input = staged combine [||[]||] parser input
+  where
+    combine
+      :: CodeQ stream
+      -> CodeQ a
+      -> CodeQ [(stream, stream, a)]
+      -> CodeQ [(stream, stream, a)]
+    combine remainder x l =
+      [||
+         let prefix = $$(
+               streamTake
+                 [|| $$(streamLen input) - $$(streamLen remainder) ||]
+                 input
+               )
+         in (prefix ,$$remainder,$$x) : $$l
+      ||]

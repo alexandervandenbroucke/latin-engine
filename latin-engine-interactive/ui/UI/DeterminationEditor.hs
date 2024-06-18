@@ -17,6 +17,7 @@ while translating.
 -}
 
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module UI.DeterminationEditor (
   determinationWidget,
@@ -32,6 +33,7 @@ import qualified Data.Sentence as S
 import qualified Data.Text as T
 import           Language.Latin
 import qualified Language.Parser as P
+import qualified Language.Parser.Compile as C
 
 -- | Parse a word as far as possible.
 --
@@ -44,12 +46,8 @@ partial rawText =
   let text = trim rawText
       trim = T.takeWhile isAlpha . T.dropWhile (not . isAlpha)
       rText = P.Reverse text
-      parser = P.reverse (declI <> declII <> declIII <> declIV <> declV)
-      ps = P.parses parser rText
-  in [(pre,post,det) |
-       (n,p) <- zip [0..] ps,
-       let (pre,post) = T.splitAt n text,
-       det <- P.epsilon p]
+      ps = $$(C.partial (C.compile reverseAllDeclensions) [||rText||])
+  in [(pre,suf,x) | (P.Reverse suf,P.Reverse pre,x) <- ps]
 
 -- | Use the hint to guess the declension of a word.
 parseHint :: T.Text -> [Declension]

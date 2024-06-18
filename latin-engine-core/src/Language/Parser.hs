@@ -47,13 +47,14 @@ module Language.Parser (
   epsilon,
   derivative,
   Parse(parse,parses),
-  Reverse(Reverse,unReverse))
+  Reverse(Reverse,unReverse),
+  partial)
 where
 
 import qualified Data.List as L
 import           Data.String (IsString(..))
 import qualified Data.Text as T
-import           Prelude hiding (reverse)
+import           Prelude hiding (splitAt, reverse)
 import Control.Monad (void)
 
 -------------------------------------------------------------------------------
@@ -321,6 +322,25 @@ instance Parse (Reverse T.Text) where
           f' c (x:xs) = f c x:x:xs
       in T.foldr f' [x0]
 
+
+-- | Parse a word as far as possible.
+--
+-- The result is a list of triples @(prefix,suffix,x)@ such that each @prefix@
+-- is a prefix of the input, @suffix@ is a suffix of the input, and
+-- @x@ is the corresponding value returned on parsing @prefix@.
+--
+partial
+  :: Parse p
+  => (Int -> p -> (p,p)) -- ^ A way to split a @p@ at an index
+  -> Parser a
+  -> p
+  -> [(p, p, a)]
+partial splitAt parser input =
+  [ (pre,suf,x)
+  | (n,p) <- zip [0..] (parses parser input)
+  , let (pre,suf) = splitAt n input
+  , x <- epsilon p
+  ]
 
 -- -- | Reverse Brozozowski derivative
 -- rderivative :: Char -> Parser a -> Parser a
