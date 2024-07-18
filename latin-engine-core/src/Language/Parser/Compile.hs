@@ -151,11 +151,20 @@ instance StagedStream (P.Reverse Text) where
           Just (cs,c) -> $$(ccons [||c||] [||P.Reverse cs||])
     ||]
 
-class StagedStream stream => SplitableStream stream where
+-- | A stream-like type which has stageable length and take operations.
+class StagedStream stream => SplittableStream stream where
   streamLen  :: CodeQ stream -> CodeQ Int
   streamTake :: CodeQ Int -> CodeQ stream -> CodeQ stream
 
-instance SplitableStream (P.Reverse Text) where
+instance SplittableStream String where
+  streamLen cstr = [|| length $$cstr ||]
+  streamTake cInt cstr = [|| take $$cInt $$cstr ||]
+
+instance SplittableStream Text where
+  streamLen ctext = [|| T.length $$ctext ||]
+  streamTake cInt ctext = [|| T.take $$cInt $$ctext ||]
+
+instance SplittableStream (P.Reverse Text) where
   streamLen cRev =
     [|| T.length $ P.unReverse $$cRev ||]
   streamTake cInt cStream =
@@ -221,7 +230,7 @@ firstMatch = staged (\_ x _ -> [|| Just $$x ||]) [|| Nothing ||]
 --
 partial
   :: forall stream a
-  .  (SplitableStream stream, Lift a)
+  .  (SplittableStream stream, Lift a)
   => State Nothing a
   -> CodeQ stream
   -> CodeQ [(stream, stream, a)]
