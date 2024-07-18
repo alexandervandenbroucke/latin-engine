@@ -239,5 +239,5 @@ partial parser input = staged combine [||[]||] parser input
                  [|| $$(streamLen input) - $$(streamLen remainder) ||]
                  input
                )
-         in (prefix ,$$remainder,$$x) : $$l
+         in (prefix,$$remainder,$$x) : $$l
       ||]

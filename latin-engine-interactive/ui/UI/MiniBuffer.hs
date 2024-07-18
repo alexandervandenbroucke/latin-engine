@@ -136,7 +136,8 @@ instance (Applicative m, Monoid a) => Semigroup (MiniBuffer n m a) where
 instance (Monoid a, Applicative m) => Monoid (MiniBuffer n m a) where
   mempty = pure mempty
   mappend = (<>)
-  
+
+-- | This newtype is the instance of 'Micro.Zoomed' for 'MiniBuffer'
 newtype FocusedMB
     name
     (m :: Type -> Type)
@@ -147,30 +148,42 @@ newtype FocusedMB
       getFocusedMB :: zoomedM (MiniBuffer name m c) a
   }
 
-instance Functor (zoomedM (MiniBuffer name m c)) => Functor (FocusedMB name m zoomedM c) where
-  fmap f = FocusedMB . fmap f . getFocusedMB
+instance
+  Functor (zoomedM (MiniBuffer name m c))
+  => Functor (FocusedMB name m zoomedM c)
+  where
+    fmap f = FocusedMB . fmap f . getFocusedMB
 
-instance Applicative (zoomedM (MiniBuffer name m c)) => Applicative (FocusedMB name m zoomedM c) where
-  pure = FocusedMB . pure
-  ff <*> fx = FocusedMB $ getFocusedMB ff <*> getFocusedMB fx
+instance
+  Applicative (zoomedM (MiniBuffer name m c))
+  => Applicative (FocusedMB name m zoomedM c)
+  where
+    pure = FocusedMB . pure
+    ff <*> fx = FocusedMB $ getFocusedMB ff <*> getFocusedMB fx
 
-type instance Micro.Zoomed (MiniBuffer name m) = FocusedMB name m (Micro.Zoomed m)
+type instance Micro.Zoomed (MiniBuffer name m) =
+  FocusedMB name m (Micro.Zoomed m)
 
-instance Micro.Zoom m n s t => Micro.Zoom (MiniBuffer name m) (MiniBuffer name n) s t where
-  zoom :: forall c. L.LensLike' (Micro.Zoomed (MiniBuffer name m) c) t s -> MiniBuffer name m c -> MiniBuffer name n c
-  zoom l = go
-    where
-      go :: MiniBuffer name m c -> MiniBuffer name n c
-      go (Pure x) = Pure x
-      go (Message msg mb) = Message msg (go mb)
-      go (Prompt accept editor msg k) = Prompt accept editor msg (go . k)
-      go (Effect m) = Effect (go <$> Micro.zoom l' m)
+instance
+  Micro.Zoom m n s t
+  => Micro.Zoom (MiniBuffer name m) (MiniBuffer name n) s t
+  where
+    zoom
+      :: forall c
+      .  L.LensLike' (Micro.Zoomed (MiniBuffer name m) c) t s
+      -> MiniBuffer name m c
+      -> MiniBuffer name n c
+    zoom l = go
+      where
+        go :: MiniBuffer name m c -> MiniBuffer name n c
+        go (Pure x) = Pure x
+        go (Message msg mb) = Message msg (go mb)
+        go (Prompt accept editor msg k) = Prompt accept editor msg (go . k)
+        go (Effect m) = Effect (go <$> Micro.zoom l' m)
 
-      l' :: L.LensLike' (Micro.Zoomed m (MiniBuffer name m c)) t s
-      l' f = getFocusedMB . l (FocusedMB . f)
-
-
-
+        -- | Like 'l', but wrapping and unwrapping 'FocusedMB'
+        l' :: L.LensLike' (Micro.Zoomed m (MiniBuffer name m c)) t s
+        l' f = getFocusedMB . l (FocusedMB . f)
 
 -- | A Traversal over the 'MBEditor' in case the 'MiniBuffer' is a 'Prompt'
 promptEditor :: Traversal' (MiniBuffer n m a) (MBEditor n)
